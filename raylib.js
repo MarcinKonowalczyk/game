@@ -1,7 +1,7 @@
 'use strict';
 
 const WASM_PATH = "./target/wasm32-unknown-unknown/debug/hotreload-raylib-wasm-template.wasm"
-const FONT_SCALE_MAGIC = 0.65;
+const FONT_SCALE_MAGIC = 0.75;
 
 // const MOUSE_MAP = {
 //     0: "Left",
@@ -304,6 +304,7 @@ let wf = undefined;
 let quit = undefined;
 let prev = undefined;
 let targetFPS = undefined;
+let font_map = new Map();
 
 const GetFPS = () => 1.0 / dt;
 
@@ -358,6 +359,77 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const lines = text.split('\n');
             for (var i = 0; i < lines.length; i++) {
                 ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+            }
+        },
+        LoadFont: (file_path_ptr) => {
+            const buffer = wf.memory.buffer;
+            const file_path = cstr_by_ptr(buffer, file_path_ptr);
+
+            // split at the last slash and at the last dot
+            let ext = file_path.split('.').pop();
+            let font_name = file_path.split('/').pop().split('.').slice(0, -1).join('.');
+
+            if (font_map.has(font_name)) {
+                // font already loaded
+                return font_map.get(font_name);
+            }
+
+            // generate a unique id for the font
+            var font_id = Math.floor(Math.random() * 1000000);
+            
+            // fetch the font file
+            fetch(file_path).then((response) => {
+                return response.arrayBuffer();
+            }).then((buffer) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsArrayBuffer(new Blob([buffer]));
+                });
+            }).then((buffer) => {
+                return new Promise((resolve, reject) => {
+                    const font = new FontFace(font_name, buffer);
+                    font.load().then((loaded_face) => {
+                        document.fonts.add(loaded_face);
+                        resolve(font);
+                    }).catch(reject);
+                });
+            }).then((font) => {
+                font_map.set(font_id, font_name);
+                return font_id;
+            }).catch((err) => {
+                console.log(err);
+                return -1;
+            });
+
+            return font_id;
+        },
+        DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing,  color_ptr) => {
+            const buffer = wf.memory.buffer;
+            const text = cstr_by_ptr(buffer, text_ptr);
+            const color = getColorFromMemory(buffer, color_ptr);
+            fontSize *= FONT_SCALE_MAGIC;
+            ctx.fillStyle = color;
+
+            var font_name = font_map.get(font);
+            if (font_name === undefined) {
+                console.log("Font not found", font_map, font);
+                return;
+            }
+
+            ctx.font = `${fontSize}px ${font_name}`;
+            
+            const lines = text.split('\n');
+        
+            for (var i = 0; i < lines.length; i++) {
+                const chars = lines[i].split('');
+                let x = posX;
+                for (var j = 0; j < chars.length; j++) {
+                    ctx.fillText(chars[j], x, posY + fontSize + (i * fontSize));
+                    x += ctx.measureText(chars[j]).width + spacing;
+                }
+                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
             }
         },
         DrawLine: (startPosX, startPosY, endPosX, endPosY, color_ptr) => {

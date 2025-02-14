@@ -1,4 +1,9 @@
 use raylib_wasm::{KeyboardKey as KEY, *};
+// use crate::small_c_string::run_with_cstr;
+// use std::sys::pal::common::small_c_string::run_with_cstr;
+
+#[cfg(feature = "web")]
+use std::ptr::addr_of;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -12,7 +17,8 @@ pub struct State {
     speed: f32,
     mouse_pos: Vector2,
     mouse_btn: bool,
-    music: Option<Music>
+    music: Option<Music>,
+    font: Option<Font>
 }
 
 #[cfg(feature = "web")]
@@ -21,7 +27,8 @@ pub struct State {
     speed: f32,
     mouse_pos: Vector2,
     mouse_btn: bool,
-    music: Option<u32>
+    music: Option<u32>,
+    font: Option<u32>
 }
 
 
@@ -34,6 +41,29 @@ unsafe extern "C" {
     pub fn IsMusicReady(music: u32) -> bool;
     pub fn IsMouseButtonDown(button: i32) -> bool;
     pub fn ConsoleLog_(msg: *const i8);
+    pub fn LoadFont(file_path: *const i8) -> u32;
+    pub fn DrawTextEx_(
+        font: u32,
+        text: *const i8,
+        positionX: i32,
+        positionY: i32,
+        fontSize: i32,
+        spacing: f32,
+        tint:*const Color,
+    );
+}
+
+#[cfg(feature = "web")]
+#[allow(non_snake_case)]
+pub fn DrawTextEx(
+    font: u32,
+    text: *const i8,
+    position: Vector2,
+    fontSize: f32,
+    spacing: f32,
+    tint: Color,
+) {
+    unsafe { DrawTextEx_(font, text, position.x as i32, position.y as i32, fontSize as i32, spacing, addr_of!(tint)) }
 }
 
 #[allow(non_snake_case)]
@@ -44,12 +74,40 @@ pub fn ConsoleLog(msg: String) {
     println!("{}", msg);
 }
 
-// InitAudioDevice();
+#[cfg(feature = "native")]
+fn draw_text(font: Option<Font>, text: &str, x: i32, y: i32, size: i32, color: Color) {
+    if font.is_none() {
+        unsafe { DrawText(cstr!(text), x, y, size, color); }
+    } else {
+        unsafe {
+            DrawTextEx(
+                font.unwrap(),
+                cstr!(text),
+                Vector2 { x: x as f32, y: y as f32 },
+                size as f32,
+                2.0,
+                color
+            );
+        }
+    }
+}
 
-// // start playing the music on loop
-// let music = LoadMusicStream(c"assets/hello_01.wav".as_ptr());
-// PlayMusicStream(music);
-
+#[cfg(feature = "web")]
+fn draw_text(font: Option<u32>, text: &str, x: i32, y: i32, size: i32, color: Color) {
+    if font.is_none() {
+        unsafe { DrawText(cstr!(text), x, y, size, color); }
+    } else {
+        DrawTextEx(
+            font.unwrap(),
+            cstr!(text),
+            Vector2 { x: x as f32, y: y as f32 },
+            size as f32,
+            2.0,
+            color
+        );
+    }
+}
+ 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
     // SetTargetFPS(300);
@@ -62,6 +120,11 @@ pub unsafe fn game_init() -> State {
 
     PlayMusicStream(music);
 
+    // let font = LoadFont(cstr!("assets/romulus.png"));
+    // NotoSansJP-Bold.ttf
+    // let font = LoadFont(cstr!("assets/NotoSansJP-Bold.ttf"));
+    let font = LoadFont(cstr!("assets/Kavoon-Regular.ttf"));
+
     State {
         rect: Rectangle {
             x: (WINDOW_WIDTH as f32 - 100.0)/2.0,
@@ -72,7 +135,8 @@ pub unsafe fn game_init() -> State {
         speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
         mouse_btn: false,
-        music: Some(music)
+        music: Some(music),
+        font: Some(font)
     }
 }
 
@@ -114,7 +178,7 @@ pub unsafe fn game_frame(state: &mut State) {
 
     BeginDrawing(); {
         ClearBackground(DARKGREEN);
-        draw_text("hello world", 250, 500, 50, RAYWHITE);
+        draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
         DrawRectangleRec(state.rect, RAYWHITE);
 
@@ -123,14 +187,14 @@ pub unsafe fn game_frame(state: &mut State) {
             x = state.rect.x.round(),
             y = state.rect.y.round()
         };
-        draw_text(&rect_pos, 10, 10, 20, RAYWHITE);
+        draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
 
         let mouse_pos = format!{
             "mouse: [{x}, {y}]",
             x = state.mouse_pos.x.round(),
             y = state.mouse_pos.y.round()
         };
-        draw_text(&mouse_pos, 10, 30, 20, RAYWHITE);
+        draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
         let color = if state.mouse_btn {
             RED
