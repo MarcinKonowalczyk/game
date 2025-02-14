@@ -45,7 +45,7 @@ pub unsafe fn game_init() -> State {
 
     InitAudioDevice();
 
-    let filename = c"assets/hello_02.wav";
+    let filename = c"assets/hello_03.wav";
     let music = LoadMusicStream(filename.as_ptr());
 
     PlayMusicStream(music);
