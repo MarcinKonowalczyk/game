@@ -6,14 +6,20 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
+#[cfg(feature = "native")]
 pub struct State {
     rect: Rectangle,
     speed: f32,
     mouse_pos: Vector2,
-    #[cfg(feature = "web")]
-    music: Option<u32>,
-    #[cfg(feature = "native")]
     music: Option<Music>
+}
+
+#[cfg(feature = "web")]
+pub struct State {
+    rect: Rectangle,
+    speed: f32,
+    mouse_pos: Vector2,
+    music: Option<u32>
 }
 
 
