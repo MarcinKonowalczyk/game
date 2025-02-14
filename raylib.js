@@ -228,6 +228,79 @@ if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
     document.getElementsByTagName('head')[0].appendChild(meta);
 }
 
+let audio = {
+    audio_1: undefined,
+    audio_2: undefined,
+    id: -1,
+    initialized: false,
+    started: false,
+    not_allowed_message_shown: false
+}
+
+function initAudioContext(url) {
+    audio.audio_1 = new Audio(url);
+    audio.audio_1.loop = false;
+    audio.audio_2 = new Audio(url);
+    audio.audio_2.loop = false;
+
+    audio.audio_1.starting = false;
+    audio.audio_2.starting = false;
+
+    audio.audio_1.addEventListener('ended', function () {
+        audio.audio_2.starting = false;
+    });
+
+    audio.audio_2.addEventListener('ended', function () {
+        audio.audio_1.starting = false;
+    });
+
+    var BUFFER = 1.0; // time it takes for the audio to end
+
+    function startAudio(_this, other) {
+        if (_this.currentTime > _this.duration - BUFFER) {
+            if (!other.starting) {
+                other.starting = true;
+                other.play().catch((err) => {
+                    console.log(err);
+                });
+            }
+        }
+    }
+
+    audio.audio_1.addEventListener('timeupdate', function () {
+        startAudio(audio.audio_1, audio.audio_2);
+    });
+
+    audio.audio_2.addEventListener('timeupdate', function () {
+        startAudio(audio.audio_2, audio.audio_1);
+    });
+
+    audio.initialized = true;
+}
+
+function tryToPlayAudio() {
+    if (!audio.initialized) {
+        return;
+    }
+    if (audio.started) {
+        return;
+    }
+    audio.audio_1.play().then(() => {
+        // console.log("audio started");
+        audio.started = true;
+    }).catch((err) => {
+        if (err.name === "NotAllowedError") {
+            if (!audio.not_allowed_message_shown) {
+                audio.not_allowed_message_shown = true;
+                console.log("autoplay not allowed. click to start audio");
+                console.log(audio)
+            }
+        } else {
+            // some other error
+            console.log(err);
+        }
+    });
+}
 
 let images = []
 
@@ -370,12 +443,34 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             let msg = cstr_by_ptr(ptr);
             console.log(msg);
             window.alert(msg);
-        }
+        },
+        InitAudioDevice: () => { },
+        LoadMusicStream: (file_path_ptr) => {
+            const buffer = wf.memory.buffer;
+            const file_path = cstr_by_ptr(buffer, file_path_ptr);
+
+            // Wait for the file fo be fetched
+            fetch(file_path).then((response) => {
+                console.log(response);
+                initAudioContext(response.url);
+                let audio = new Audio();
+                return audio.id;
+            }).catch((err) => {
+                console.log(err);
+                return -1;
+            });
+        },
+        PlayMusicStream: (_audio_id) => {
+            tryToPlayAudio();
+        },
+        UpdateMusicStream: (_audio_id) => {
+            tryToPlayAudio();
+        },
     })
 }).then(w => {
     wasm = w;
     wf = w.instance.exports;
-    // console.log(w);
+    console.log(w);
 
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
