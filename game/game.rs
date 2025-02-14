@@ -11,6 +11,7 @@ pub struct State {
     rect: Rectangle,
     speed: f32,
     mouse_pos: Vector2,
+    mouse_btn: bool,
     music: Option<Music>
 }
 
@@ -19,6 +20,7 @@ pub struct State {
     rect: Rectangle,
     speed: f32,
     mouse_pos: Vector2,
+    mouse_btn: bool,
     music: Option<u32>
 }
 
@@ -30,6 +32,16 @@ unsafe extern "C" {
     pub fn UpdateMusicStream(music: u32);
     pub fn LoadMusicStream(file_path: *const i8) -> u32;
     pub fn IsMusicReady(music: u32) -> bool;
+    pub fn IsMouseButtonDown(button: i32) -> bool;
+    pub fn ConsoleLog_(msg: *const i8);
+}
+
+#[allow(non_snake_case)]
+pub fn ConsoleLog(msg: String) {
+    #[cfg(feature = "web")]
+    unsafe { ConsoleLog_(cstr!(msg)) };
+    #[cfg(feature = "native")]
+    println!("{}", msg);
 }
 
 // InitAudioDevice();
@@ -40,7 +52,7 @@ unsafe extern "C" {
 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
-    SetTargetFPS(144);
+    // SetTargetFPS(300);
     init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
 
     InitAudioDevice();
@@ -59,6 +71,7 @@ pub unsafe fn game_init() -> State {
         },
         speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
+        mouse_btn: false,
         music: Some(music)
     }
 }
@@ -72,10 +85,24 @@ unsafe fn handle_keys(state: &mut State) {
     if IsKeyDown(KEY::A)      { state.rect.x -= dt*state.speed }
     if IsKeyDown(KEY::S)      { state.rect.y += dt*state.speed }
     if IsKeyDown(KEY::D)      { state.rect.x += dt*state.speed }
+
+    // prevent the rect from wandering off the screen too far
+    if state.rect.x < -state.rect.width {
+        state.rect.x = -state.rect.width;
+    } else if state.rect.x > WINDOW_WIDTH as f32 {
+        state.rect.x = WINDOW_WIDTH as f32;
+    }
+
+    if state.rect.y < -state.rect.height {
+        state.rect.y = -state.rect.height;
+    } else if state.rect.y > WINDOW_HEIGHT as f32 {
+        state.rect.y = WINDOW_HEIGHT as f32;
+    }
 }
 
 unsafe fn handle_mouse(state: &mut State) {
-    state.mouse_pos = GetMousePosition();    
+    state.mouse_pos = GetMousePosition();
+    state.mouse_btn = IsMouseButtonDown(MouseButton::Left as i32);
 }
 
 pub type GameFrame = unsafe fn(state: &mut State);
@@ -91,8 +118,6 @@ pub unsafe fn game_frame(state: &mut State) {
 
         DrawRectangleRec(state.rect, RAYWHITE);
 
-        DrawFPS(WINDOW_WIDTH - 100, 10);
-
         let rect_pos = format!{
             "rect: [{x}, {y}]",
             x = state.rect.x.round(),
@@ -107,7 +132,13 @@ pub unsafe fn game_frame(state: &mut State) {
         };
         draw_text(&mouse_pos, 10, 30, 20, RAYWHITE);
 
-        DrawCircle(state.mouse_pos.x as i32, state.mouse_pos.y as i32, 10.0, RAYWHITE);
+        let color = if state.mouse_btn {
+            RED
+        } else {
+            RAYWHITE
+        };
+
+        DrawCircle(state.mouse_pos.x as i32, state.mouse_pos.y as i32, 10.0, color);
     } EndDrawing();
 
     if state.music.is_some() {

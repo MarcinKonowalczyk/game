@@ -2,6 +2,17 @@
 
 const WASM_PATH = "./target/wasm32-unknown-unknown/debug/hotreload-raylib-wasm-template.wasm"
 const FONT_SCALE_MAGIC = 0.65;
+
+// const MOUSE_MAP = {
+//     0: "Left",
+//     1: "Right",
+//     2: "Middle",
+//     3: "Side",
+//     4: "Extra",
+//     5: "Forward",
+//     6: "Back",
+// }
+
 const GLFW_MAP = {
     "Space": 32,
     "Quote": 39,
@@ -178,6 +189,11 @@ const game = document.getElementById("game");
 var container = game.parentElement; // parent div
 const ctx = game.getContext("2d");
 
+game.mouseX = -1;
+game.mouseY = -1;
+game.mouseDown = false;
+game.mouseButton = -1;
+
 game.onmousemove = handleMouseMove;
 
 function handleMouseMove(event) {
@@ -187,6 +203,33 @@ function handleMouseMove(event) {
     game.mouseX = xf * game.width;
     game.mouseY = yf * game.height;
 }
+
+game.onmouseleave = function (event) {
+    // console.log("mouse leave");
+    game.mouseX = -1;
+    game.mouseY = -1;
+}
+
+game.onmousedown = function (event) {
+    // console.log("mouse down");
+    game.mouseDown = true;
+    game.mouseButton = event.button;
+}
+
+game.onmouseup = function (event) {
+    // console.log("mouse up");
+    game.mouseDown = false;
+    game.mouseButton = -1;
+}
+
+game.oncontextmenu = function (event) {
+    // console.log("right click");
+    event.preventDefault();
+}
+
+// game.onmouseenter = function (event) {
+//     console.log("mouse enter");
+// }
 
 var SCALE_TO_FIT = true;
 var WIDTH = 800;
@@ -266,8 +309,17 @@ const GetFPS = () => 1.0 / dt;
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
+        ConsoleLog_ (text_ptr) {
+            const buffer = wf.memory.buffer;
+            const text = cstr_by_ptr(buffer, text_ptr);
+            console.log(text);
+        },
         GetMousePositionX: () => game.mouseX,
         GetMousePositionY: () => game.mouseY,
+        IsMouseButtonDown: (button) => {
+            // console.log(button, game.mouseButton);
+            return game.mouseButton === button;
+        },
         InitWindow: (w, h, t) => {
             game.width = w;
             game.height = h;
@@ -375,21 +427,26 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         UnloadTexture: () => { },
         GetScreenWidth: () => ctx.canvas.width,
         GetScreenHeight: () => ctx.canvas.height,
-        GetFrameTime: () => Math.min(dt, 1.0 / targetFPS),
+        GetFrameTime: () => {
+            if (targetFPS !== undefined) {
+                return Math.min(dt, 1.0 / targetFPS);
+            }
+            return dt;
+        },
         IsWindowResized: () => false,
         WindowShouldClose: () => false,
         SetTargetFPS: (x) => targetFPS = x,
         GetFPS: () => GetFPS(),
-        DrawFPS: (x, y) => {
-            const fontSize = 50.0 * FONT_SCALE_MAGIC;
-            const fps = GetFPS();
-            let color = "lime";                               // Good FPS
-            if ((fps < 30) && (fps >= 15)) color = "orange";  // Warning FPS
-            else if (fps < 15) color = "red";                 // Low FPS
-            ctx.fillStyle = "green";
-            ctx.font = `${fontSize}px grixel`;
-            ctx.fillText(targetFPS, x, y + fontSize);
-        },
+        // DrawFPS: (x, y) => {
+        //     const fontSize = 50.0 * FONT_SCALE_MAGIC;
+        //     const fps = GetFPS();
+        //     let color = "lime";                               // Good FPS
+        //     if ((fps < 30) && (fps >= 15)) color = "orange";  // Warning FPS
+        //     else if (fps < 15) color = "red";                 // Low FPS
+        //     ctx.fillStyle = "green";
+        //     ctx.font = `${fontSize}px grixel`;
+        //     ctx.fillText(targetFPS, x, y + fontSize);
+        // },
         alert: (ptr) => {
             let msg = cstr_by_ptr(ptr);
             console.log(msg);
