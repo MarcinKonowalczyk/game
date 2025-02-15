@@ -133,7 +133,14 @@ fn draw_text(font: Option<u32>, text: &str, x: i32, y: i32, size: i32, color: Co
 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
+
+    // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
+    // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
+    // See: https://github.com/raysan5/raylib/issues/3354
+    // Apparently this is known and solutions are unplanned. I guess it's not that much of a problem from C.
+
     // SetTargetFPS(300);
+    
     init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
 
     InitAudioDevice();
