@@ -1,4 +1,5 @@
 from PIL import Image
+from PIL.Image import Resampling
 import numpy as np
 from dataclasses import dataclass
 import math
@@ -48,19 +49,9 @@ class Blob:
         )
 
 
-def magentify(
-    image: Image.Image,
-    pad: int = 1,  # padding between blobs
-    verbose: bool = False,
-) -> Image.Image:
+def find_blobs(image: Image.Image) -> list[Blob]:
     image = image.convert("RGBA")
     image_data = np.array(image)
-
-    # if verbose:
-    #     print(f"Background color: {background} -> {background_color.tolist()}")
-    #     print(f"Magenta color: {magenta} -> {magenta.tolist()}")
-
-    # Find all disconnected blobs of pixels
 
     blobs = []
     visited = np.zeros((image.height, image.width), dtype=bool)
@@ -128,14 +119,18 @@ def magentify(
     # sort the blobs from left to right, top to bottom, by min_x, min_y
     blobs.sort(key=lambda b: (b.min_x, b.min_y))
 
-    # add test blobs
-    # _D = 10 - 1
-    # blobs += [
-    #     Blob(0, 0, _D, _D),
-    #     Blob(image.width - _D, 0, image.width - 1, _D),
-    #     Blob(0, image.height - _D, _D, image.height - 1),
-    #     Blob(image.width - _D, image.height - _D, image.width - 1, image.height - 1),
-    # ]
+    return blobs
+
+
+def magentify(
+    image: Image.Image,
+    pad: int = 1,  # padding between blobs
+    verbose: bool = False,
+) -> Image.Image:
+    image = image.convert("RGBA")
+
+    # Find all disconnected blobs of pixels
+    blobs = find_blobs(image)
 
     # print all blobs
     if verbose:
@@ -207,6 +202,7 @@ def magentify(
         print(f"Output image size: {out_shape[0]}x{out_shape[1]}")
 
     # Copy the blobs into the output image
+    image_data = np.array(image)
     n, m = 0, 0  # indices in the blob grid
     k, l = pad, pad  # pixel-level cursor in the output image
     for i, b in enumerate(blobs):
@@ -228,6 +224,11 @@ def magentify(
 
     return Image.fromarray(out_image_data, "RGBA")
 
+def upscale(image: Image.Image, factor: int) -> Image.Image:
+    return image.resize(
+        (image.width * factor, image.height * factor), Resampling.NEAREST
+    )
+
 
 def main() -> None:
     import argparse
@@ -244,6 +245,14 @@ def main() -> None:
         default=False,
     )
 
+    parser.add_argument(
+        "-u",
+        "--upscale",
+        help="Upscale the output image by a factor.",
+        type=int,
+        default=1,
+    )
+
     parser.add_argument("input", help="Input image file.")
     parser.add_argument("output", help="Output image file.")
 
@@ -255,6 +264,9 @@ def main() -> None:
         input_image,
         verbose=args.verbose,
     )
+
+    if args.upscale > 1:
+        output_image = upscale(output_image, args.upscale)
 
     output_image.save(args.output)
 
