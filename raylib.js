@@ -150,17 +150,14 @@ function cstr_by_ptr(mem_buffer, ptr) {
     return new TextDecoder().decode(bytes);
 }
 
-function color_hex_unpacked(r, g, b, a) {
+function getColorFromMemory(buffer, color_ptr) {
+    var [r, g, b, a] = new Uint8Array(buffer, color_ptr, 4);
     r = r.toString(16).padStart(2, '0');
     g = g.toString(16).padStart(2, '0');
     b = b.toString(16).padStart(2, '0');
     a = a.toString(16).padStart(2, '0');
     return "#" + r + g + b + a;
-}
-
-function getColorFromMemory(buffer, color_ptr) {
-    const [r, g, b, a] = new Uint8Array(buffer, color_ptr, 4);
-    return color_hex_unpacked(r, g, b, a);
+    
 }
 
 function make_environment(...envs) {
@@ -296,7 +293,7 @@ function tryToPlayAudio() {
     audio.loop.play(0.0);
 }
 
-let images = []
+let images = new Map();
 
 let wasm = undefined;
 let dt = undefined;
@@ -471,30 +468,59 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI, 0);
             ctx.fill();
         },
-        // DrawTexture: (id, x, y, color_ptr) => {
-        //     console.log(x, y, id);
-        //     const img = images[id];
-        //     ctx.drawImage(img, 0, y);
-        // },
-        LoadTexture: (result_ptr, file_path_ptr) => {
+        LoadTexture: (file_path_ptr) => {
+            console.log("Loading texture");
+            // console.log(result_ptr, file_path_ptr);
             const buffer = wf.memory.buffer;
+            console.log("1");
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
+            console.log("2");
 
-            let result = new Uint32Array(buffer, result_ptr, 5)
+            // let result = new Uint32Array(buffer, result_ptr, 5)
             let img = new Image();
+            var id = Math.floor(Math.random() * 1000000);
+
+            console.log(id);
+
+            images[id] = img;
+
+            // Some info we already know
+            // result[0] = id;
+            // result[3] = 1; // mipmaps
+            // result[4] = 7; // format PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+
+            console.log("Loading image", id, file_path);
+            // img.onload = () => {
+            //     images[id] = img;
+            // };
             img.src = file_path;
-            images.push(img);
-
-            img.onload = () => {
-                images.push(img);
-                result[0] = images.indexOf(img);
-                result[1] = img.width; // width
-                result[2] = img.height; // height
-                result[3] = 1; // mipmaps
-                result[4] = 7; // format PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-            };
-
-            return result;
+            
+            // console.log(result);
+            
+            return id;
+        },
+        GetTextureWidth: (id) => {
+            const img = images[id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.width;
+        },
+        GetTextureHeight: (id) => {
+            const img = images[id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.height;
+        },
+        DrawTextureEx_: (id, x, y, rotation, scale, color_ptr) => {
+            const img = images[id];
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rotation);
+            ctx.scale(scale, scale);
+            ctx.drawImage(img, 0, 0);
+            ctx.restore();
         },
         UnloadTexture: () => { },
         GetScreenWidth: () => ctx.canvas.width,

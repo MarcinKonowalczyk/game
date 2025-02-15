@@ -11,6 +11,9 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
+// All of the state that we need to keep track of in the game
+// This is subtly different between the native and web versions,
+// since we use u32 ids for web
 #[cfg(feature = "native")]
 pub struct State {
     rect: Rectangle,
@@ -30,7 +33,7 @@ pub struct State {
     mouse_btn: bool,
     music: Option<u32>,
     font: Option<u32>,
-    texture: Option<Texture>,
+    texture: Option<u32>,
 }
 
 // All the external functions which we promise to implement on the javascript side
@@ -55,6 +58,19 @@ unsafe extern "C" {
         spacing: f32,
         tint: *const Color,
     );
+    // pub fn LoadTexture_(file_path: *const i8) -> u32;
+    // #[no_mangle]
+    pub fn LoadTexture(file_path: *const i8) -> u32;
+    pub fn GetTextureWidth(texture: u32) -> i32;
+    pub fn GetTextureHeight(texture: u32) -> i32;
+    pub fn DrawTextureEx_(
+        texture: u32,
+        positionX: i32,
+        positionY: i32,
+        rotation: f32,
+        scale: f32,
+        tint: *const Color,
+    );
 }
 
 #[cfg(feature = "web")]
@@ -75,6 +91,27 @@ pub fn DrawTextEx(
             position.y as i32,
             fontSize as i32,
             spacing,
+            addr_of!(tint),
+        )
+    }
+}
+
+#[cfg(feature = "web")]
+#[allow(non_snake_case)]
+pub fn DrawTextureEx(
+    texture: u32,
+    position: Vector2,
+    rotation: f32,
+    scale: f32,
+    tint: Color,
+) {
+    unsafe {
+        DrawTextureEx_(
+            texture,
+            position.x as i32,
+            position.y as i32,
+            rotation,
+            scale,
             addr_of!(tint),
         )
     }
@@ -136,6 +173,7 @@ fn draw_text(font: Option<u32>, text: &str, x: i32, y: i32, size: i32, color: Co
 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
+    ConsoleLog("game_init".to_string());
 
     // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
     // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
@@ -159,7 +197,9 @@ pub unsafe fn game_init() -> State {
 
     // Load slime texture
     // Blue_Slime-Idle-mag.png
+    ConsoleLog("loading texture from rust".to_string());
     let texture = LoadTexture(cstr!("assets/Blue_Slime-Idle-mag.png"));
+    ConsoleLog("loaded texture from rust".to_string());
 
     State {
         rect: Rectangle {
@@ -229,7 +269,14 @@ pub unsafe fn game_frame(state: &mut State) {
     {
         ClearBackground(DARKGREEN);
         draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
-
+        
+        DrawRectangle(
+            state.rect.x as i32,
+            state.rect.y as i32,
+            state.rect.width as i32,
+            state.rect.height as i32,
+            RAYWHITE,
+        );
         if state.texture.is_some() {
             let texture = state.texture.unwrap();
             let mut position = Vector2 {
@@ -237,23 +284,27 @@ pub unsafe fn game_frame(state: &mut State) {
                 y: state.rect.y,
             };
             let rotation = 0.0;
+
             // figure out how to scale the texture to the size of the rect
-            let scale = state.rect.width / texture.width as f32;
+            #[cfg(feature = "web")]
+            let width = GetTextureWidth(texture);
+            #[cfg(feature = "native")]
+            let width = texture.width;
+            
+            #[cfg(feature = "web")]
+            let height = GetTextureHeight(texture);
+            #[cfg(feature = "native")]
+            let height = texture.height;
+
+            let scale = state.rect.width / width as f32;
 
             // Move the texture so it's at the bottom of the rect
-            let scaled_height = texture.height as f32 * scale;
+            let scaled_height = height as f32 * scale;
             position.y += state.rect.height - scaled_height;
 
             let tint = RAYWHITE;
             DrawTextureEx(texture, position, rotation, scale, tint);
         } else {
-            DrawRectangle(
-                state.rect.x as i32,
-                state.rect.y as i32,
-                state.rect.width as i32,
-                state.rect.height as i32,
-                RAYWHITE,
-            );
         }
 
         let rect_pos = format! {
