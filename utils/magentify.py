@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import math
 from typing import Literal
 
+__version__ = "0.1.0"
+
 try:
     import colorama  # type: ignore
 
@@ -275,6 +277,12 @@ def main() -> None:
         help="Anchor the blobs to the top or bottom of the boxes. Becomes irrelevant if the blobs have the same height.",
         choices=["top", "bottom"],
         default="top",
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     parser.add_argument("input", help="Input image file.")
