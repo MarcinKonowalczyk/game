@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import math
 from typing import Literal
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 try:
     import colorama  # type: ignore
@@ -36,12 +36,19 @@ class Blob:
     max_x: int
     max_y: int
 
+    @property
+    def width(self) -> int:
+        return self.max_x - self.min_x + 1
+
+    @property
+    def height(self) -> int:
+        return self.max_y - self.min_y + 1
+
     def __str__(self) -> str:
-        # return f"Blob({self.min_x}, {self.min_y}, {self.max_x}, {self.max_y})"
-        return f"Blob({self.min_x}-{self.max_x}, {self.min_y}-{self.max_y})"
+        return f"Blob({self.width}x{self.height} @ {self.min_x},{self.min_y})"
 
     def __repr__(self) -> str:
-        return str(self)
+        return f"Blob({self.min_x}, {self.min_y}, {self.max_x}, {self.max_y})"
 
     def overlaps(self, other: "Blob") -> bool:
         return (
@@ -52,14 +59,24 @@ class Blob:
         )
 
 
-def find_blobs(image: Image.Image) -> list[Blob]:
+def find_blobs(image: Image.Image) -> tuple[list[Blob], np.ndarray | None]:
+    """Find all disconnected blobs of pixels in an image.
+    Also return the background color of the blobs (or None if
+    all blobs are rectangles and don't have a background).
+    """
+
     image = image.convert("RGBA")
     image_data = np.array(image)
 
     blobs = []
     visited = np.zeros((image.height, image.width), dtype=bool)
 
+    background = None  # Try to figure out what's the background color
+
     def _is_background(color: np.ndarray) -> bool:
+        nonlocal background
+        if background is None:
+            background = color
         return color[3] == 0
 
     _none = np.array([])
@@ -122,22 +139,32 @@ def find_blobs(image: Image.Image) -> list[Blob]:
     # sort the blobs from left to right, top to bottom, by min_x, min_y
     blobs.sort(key=lambda b: (b.min_x, b.min_y))
 
-    return blobs
+    return blobs, background
 
 
 def magentify(
     image: Image.Image,
     pad: int = 1,  # padding between blobs
     anchor: Literal["top", "bottom"] = "top",
+    pad_height: Literal["none", "row", "all"] = "none",
     verbose: bool = False,
 ) -> Image.Image:
     if anchor not in ["top", "bottom"]:
         raise ValueError(f"Invalid anchor: {anchor}")
 
+    if pad_height not in ["none", "row", "all"]:
+        raise ValueError(f"Invalid pad_height: {pad_height}")
+
     image = image.convert("RGBA")
 
     # Find all disconnected blobs of pixels
-    blobs = find_blobs(image)
+    blobs, background = find_blobs(image)
+
+    if background is None:
+        # I guess all blobs are rectangles and don't have a background
+        # Just use transparent background. This is relevant only to
+        # the padding of the blobs anyway.
+        background = np.zeros(4, dtype=np.uint8)
 
     # print all blobs
     if verbose:
@@ -187,8 +214,16 @@ def magentify(
             n, m = 0, m + 1
 
     if verbose:
-        print(f"Max widths: {max_widths}")
-        print(f"Max heights: {max_heights}")
+        overall_max_width = max(max_widths)
+        overall_max_height = sum(max_heights)
+
+        print(f"Max widths: {max_widths} (overall: {overall_max_width})")
+        print(f"Max heights: {max_heights} (overall: {overall_max_height})")
+
+    if pad_height == "all":
+        # Pad all blobs to the height of the tallest blob in the row. Hence
+        # all blobs will be as tall as the tallest blob in the row.
+        max_heights = np.full(M, max(max_heights))
 
     out_shape = (
         sum(max_heights) + (N + 1) * pad,
@@ -197,13 +232,7 @@ def magentify(
 
     magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
 
-    out_image_data = (
-        np.ones(
-            (*out_shape, 4),
-            dtype=np.uint8,
-        )
-        * magenta
-    )
+    out_image_data = np.ones((*out_shape, 4), dtype=np.uint8) * magenta
 
     if verbose:
         print(f"Output image size: {out_shape[0]}x{out_shape[1]}")
@@ -230,7 +259,22 @@ def magentify(
 
         out_image_data[region] = blob_image_data
 
-        # Move the cursor
+        if pad_height != "none":
+            delta = max_heights[m] - (b.max_y - b.min_y + 1)
+            if delta > 0:
+                if anchor == "top":
+                    new_slice = slice(
+                        k + b.max_y - b.min_y + 1,
+                        k + b.max_y - b.min_y + 1 + delta,
+                    )
+                elif anchor == "bottom":
+                    new_slice = slice(k - delta, k)
+
+                region = (new_slice, *region[1:])
+
+                out_image_data[region] = background
+
+        # Move the pixel cursor
         l += b.max_x - b.min_x + 1 + pad
 
         # Keep track of the blob grid coordinates
@@ -285,6 +329,13 @@ def main() -> None:
         version=f"%(prog)s {__version__}",
     )
 
+    parser.add_argument(
+        "--pad-height",
+        help="Pad the height of the output image. Each blob will be held at the anchor and padded to the height of the tallest blob in the row.",
+        choices=["none", "row", "all"],
+        default="none",
+    )
+
     parser.add_argument("input", help="Input image file.")
     parser.add_argument("output", help="Output image file.")
 
@@ -296,6 +347,7 @@ def main() -> None:
         input_image,
         pad=args.pad,
         anchor=args.anchor,
+        pad_height=args.pad_height,
         verbose=args.verbose,
     )
 
