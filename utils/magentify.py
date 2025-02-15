@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 
 try:
-    import colorama
+    import colorama  # type: ignore
 
     colorama.init()
 except ImportError:
@@ -50,25 +50,23 @@ class Blob:
 
 def magentify(
     image: Image.Image,
-    background: str = "#00000000",
-    magenta: str = "#ff00ffff",
     pad: int = 1,  # padding between blobs
     verbose: bool = False,
 ) -> Image.Image:
     image = image.convert("RGBA")
     image_data = np.array(image)
 
-    background_color = np.array(Image.new("RGBA", (1, 1), background))
-    magenta_color = np.array(Image.new("RGBA", (1, 1), magenta))
-
-    if verbose:
-        print(f"Background color: {background} -> {background_color.tolist()}")
-        print(f"Magenta color: {magenta} -> {magenta_color.tolist()}")
+    # if verbose:
+    #     print(f"Background color: {background} -> {background_color.tolist()}")
+    #     print(f"Magenta color: {magenta} -> {magenta.tolist()}")
 
     # Find all disconnected blobs of pixels
 
     blobs = []
     visited = np.zeros((image.height, image.width), dtype=bool)
+
+    def _is_background(color: np.ndarray) -> bool:
+        return color[3] == 0
 
     _none = np.array([])
 
@@ -83,8 +81,7 @@ def magentify(
 
         pixel_color = image_data[y, x, :]
 
-        # we never want to visit the background color
-        if (pixel_color == background_color).all():
+        if _is_background(pixel_color):
             return _none
 
         return pixel_color
@@ -111,6 +108,7 @@ def magentify(
             # Flood fill
             stack: list[tuple[int, int]] = []
             _append_neighbours(stack, x, y)
+
             while stack:
                 x, y = stack.pop()
 
@@ -194,12 +192,15 @@ def magentify(
         sum(max_heights) + (N + 1) * pad,
         sum(max_widths) + (M + 1) * pad,
     )
+
+    magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
+
     out_image_data = (
         np.ones(
             (*out_shape, 4),
             dtype=np.uint8,
         )
-        * magenta_color
+        * magenta
     )
 
     if verbose:
@@ -231,7 +232,9 @@ def magentify(
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Texture Tool")
+    parser = argparse.ArgumentParser(
+        description="Take an image of blobs on background, move all the blobs into boxes and set them up on a magenta background.",
+    )
 
     parser.add_argument(
         "-v",
@@ -241,38 +244,19 @@ def main() -> None:
         default=False,
     )
 
-    subparsers = parser.add_subparsers(dest="command")
-    subparsers.required = True
-
-    magentify_parser = subparsers.add_parser(
-        "magentify",
-        help="Magentify texture.",
-        description="Take an image of blobs on background, move all the blobs into boxes and set them up on a magenta background.",
-    )
-
-    magentify_parser.add_argument("input", help="Input image file.")
-    magentify_parser.add_argument("output", help="Output image file.")
-    magentify_parser.add_argument(
-        "--input-background",
-        help="Background color of the input image. Default is alpha channel.",
-        default="#00000000",
-    )
-    magentify_parser.add_argument("--magenta", help="Magenta color.", default="#ff00ff")
+    parser.add_argument("input", help="Input image file.")
+    parser.add_argument("output", help="Output image file.")
 
     args = parser.parse_args()
 
-    if args.command == "magentify":
-        input_image = Image.open(args.input)
-        output_image = magentify(
-            input_image,
-            background=args.input_background,
-            magenta=args.magenta,
-            verbose=args.verbose,
-        )
-        output_image.save(args.output)
-    else:
-        raise NotImplementedError(args.command)
+    input_image = Image.open(args.input)
+    
+    output_image = magentify(
+        input_image,
+        verbose=args.verbose,
+    )
 
+    output_image.save(args.output)
 
 if __name__ == "__main__":
     try:
