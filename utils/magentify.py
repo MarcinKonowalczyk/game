@@ -3,6 +3,7 @@ from PIL.Image import Resampling
 import numpy as np
 from dataclasses import dataclass
 import math
+from typing import Literal
 
 try:
     import colorama  # type: ignore
@@ -125,8 +126,12 @@ def find_blobs(image: Image.Image) -> list[Blob]:
 def magentify(
     image: Image.Image,
     pad: int = 1,  # padding between blobs
+    anchor: Literal["top", "bottom"] = "top",
     verbose: bool = False,
 ) -> Image.Image:
+    if anchor not in ["top", "bottom"]:
+        raise ValueError(f"Invalid anchor: {anchor}")
+
     image = image.convert("RGBA")
 
     # Find all disconnected blobs of pixels
@@ -205,12 +210,23 @@ def magentify(
     image_data = np.array(image)
     n, m = 0, 0  # indices in the blob grid
     k, l = pad, pad  # pixel-level cursor in the output image
+
     for i, b in enumerate(blobs):
         blob_image_data = image_data[b.min_y : b.max_y + 1, b.min_x : b.max_x + 1, :]
 
-        out_image_data[
-            k : k + b.max_y - b.min_y + 1, l : l + b.max_x - b.min_x + 1, :
-        ] = blob_image_data
+        if anchor == "top":
+            k = sum(max_heights[:m]) + (m + 1) * pad
+        elif anchor == "bottom":
+            delta = max_heights[m] - (b.max_y - b.min_y + 1)
+            k = sum(max_heights[:m]) + (m + 1) * pad + delta
+
+        region = (
+            slice(k, k + b.max_y - b.min_y + 1),
+            slice(l, l + b.max_x - b.min_x + 1),
+            slice(None),
+        )
+
+        out_image_data[region] = blob_image_data
 
         # Move the cursor
         l += b.max_x - b.min_x + 1 + pad
@@ -220,9 +236,12 @@ def magentify(
         if n == N:
             n, m = 0, m + 1
             l = pad
-            k = sum(max_heights[:m]) + (m + 1) * pad
+
+        if i == 9:
+            break
 
     return Image.fromarray(out_image_data, "RGBA")
+
 
 def upscale(image: Image.Image, factor: int) -> Image.Image:
     return image.resize(
@@ -246,11 +265,16 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "-u",
-        "--upscale",
-        help="Upscale the output image by a factor.",
-        type=int,
-        default=1,
+        "--upscale", help="Upscale the output image by a factor.", type=int, default=1
+    )
+
+    parser.add_argument("--pad", help="Padding between blobs.", type=int, default=1)
+
+    parser.add_argument(
+        "--anchor",
+        help="Anchor the blobs to the top or bottom of the boxes. Becomes irrelevant if the blobs have the same height.",
+        choices=["top", "bottom"],
+        default="top",
     )
 
     parser.add_argument("input", help="Input image file.")
@@ -262,6 +286,8 @@ def main() -> None:
     
     output_image = magentify(
         input_image,
+        pad=args.pad,
+        anchor=args.anchor,
         verbose=args.verbose,
     )
 
