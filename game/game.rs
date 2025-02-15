@@ -33,6 +33,9 @@ pub struct State {
     texture: Option<Texture>,
 }
 
+// All the external functions which we promise to implement on the javascript side
+// Some stuff directly maps to raylib functions, and some stuff does not, and needs
+// helper functions below.
 #[cfg(feature = "web")]
 unsafe extern "C" {
     pub fn InitAudioDevice();
