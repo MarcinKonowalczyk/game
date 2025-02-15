@@ -225,8 +225,8 @@ def magentify(
         max_heights = np.full(M, max(max_heights))
 
     out_shape = (
-        sum(max_heights) + (N + 1) * pad,
-        max(row_widths) + (M + 1) * pad,
+        sum(max_heights) + (M + 1) * pad,
+        max(row_widths) + (N + 1) * pad,
     )
 
     magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
