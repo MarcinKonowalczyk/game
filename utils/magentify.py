@@ -202,22 +202,21 @@ def magentify(
 
     # Figure out the size of the output image
     # We need to know the widest and tallest blobs in each row and column
-    max_widths = np.zeros(N, dtype=int)
     max_heights = np.zeros(M, dtype=int)
+    row_widths = np.zeros(N, dtype=int)
 
     n, m = 0, 0
     for i, b in enumerate(blobs):
-        max_widths[n] = max(max_widths[n], b.max_x - b.min_x + 1)
         max_heights[m] = max(max_heights[m], b.max_y - b.min_y + 1)
+        row_widths[m] += b.max_x - b.min_x + 1
         n += 1
         if n == N:
             n, m = 0, m + 1
 
     if verbose:
-        overall_max_width = max(max_widths)
         overall_max_height = sum(max_heights)
 
-        print(f"Max widths: {max_widths} (overall: {overall_max_width})")
+        print(f"Row widths: {row_widths}")
         print(f"Max heights: {max_heights} (overall: {overall_max_height})")
 
     if pad_height == "all":
@@ -227,7 +226,7 @@ def magentify(
 
     out_shape = (
         sum(max_heights) + (N + 1) * pad,
-        sum(max_widths) + (M + 1) * pad,
+        max(row_widths) + (M + 1) * pad,
     )
 
     magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
