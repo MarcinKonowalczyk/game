@@ -1,10 +1,12 @@
 # As-of-yet untitled game thingy
 
+![screenshot](img/screenshot.png)
+
 A small game project to learn about rust, wasm, javascript and raylib all at the same time ✌️
 
-The project uses [raylib-wasm](https://github.com/rakivo/raylib-wasm) library to link to raylib
-and compile to wasm. The library includes some functionality, and any other extensions thereto are
-added in `game/webhacks.rs`, in a similar style.
+The project uses [raylib-wasm](https://github.com/rakivo/raylib-wasm) library to link to raylib and compile to wasm. The library includes some functionality, and any other extensions thereto are added in `game/webhacks.rs`, in a similar style.
+
+Assets are not included in the repo to be nice to git in terms of large files. Will become available to download somewhere at some point.
 
 # The tricky bit
 
@@ -22,3 +24,12 @@ cargo run --features=native
 cargo build --target wasm32-unknown-unknown --features=web && python -m http.server   
 <browser> http://0.0.0.0:8000/
 ```
+
+# Working bits
+
+By 'working' I mean on web and on my machine (macos).
+
+- [x] Font
+- [x] Music
+- [x] Basic Texture loading
+- [ ] Animations
