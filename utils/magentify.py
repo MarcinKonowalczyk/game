@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from PIL import Image
 from PIL.Image import Resampling
 import numpy as np
@@ -341,7 +343,7 @@ def main() -> None:
     args = parser.parse_args()
 
     input_image = Image.open(args.input)
-    
+
     output_image = magentify(
         input_image,
         pad=args.pad,
@@ -354,6 +356,7 @@ def main() -> None:
         output_image = upscale(output_image, args.upscale)
 
     output_image.save(args.output)
+
 
 if __name__ == "__main__":
     try:
