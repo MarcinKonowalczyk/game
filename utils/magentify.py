@@ -6,6 +6,7 @@ import numpy as np
 from dataclasses import dataclass
 import math
 from typing import Literal
+from enum import Enum
 
 __version__ = "0.1.1"
 
@@ -30,6 +31,100 @@ def cprint(message: str, color: str | None = None) -> None:
 class BlobError(Exception):
     pass
 
+class Anchor(Enum):
+    TOP_LEFT = "top-left"  # default, top
+    TOP_CENTER = "top-center"
+    TOP_RIGHT = "top-right"
+    LEFT_CENTER = "left-center"  # center-left
+    CENTER_CENTER = "center-center"  # center
+    RIGHT_CENTER = "right-center"  # center-right
+    BOTTOM_LEFT = "bottom-left"
+    BOTTOM_CENTER = "bottom-center"
+    BOTTOM_RIGHT = "bottom-right"
+
+    @classmethod
+    def coerce(cls, anchor: "Anchor | str") -> "Anchor":
+        if isinstance(anchor, Anchor):
+            return anchor
+        elif isinstance(anchor, str):
+            return Anchor.from_string(anchor)
+        else:
+            raise ValueError(f"Invalid anchor: {anchor}")
+
+    @classmethod
+    def from_string(cls, s: str) -> "Anchor":
+        OPTIONS: dict[tuple[str, ...], Anchor] = {
+            ("top",): Anchor.TOP_LEFT,
+            ("center",): Anchor.TOP_CENTER,
+            ("bottom",): Anchor.BOTTOM_LEFT,
+            ("left",): Anchor.TOP_LEFT,
+            ("right",): Anchor.TOP_RIGHT,
+            ("left", "top"): Anchor.TOP_LEFT,
+            ("center", "top"): Anchor.TOP_CENTER,
+            ("right", "top"): Anchor.TOP_RIGHT,
+            ("center", "left"): Anchor.LEFT_CENTER,
+            ("center", "center"): Anchor.CENTER_CENTER,
+            ("center", "right"): Anchor.RIGHT_CENTER,
+            ("bottom", "left"): Anchor.BOTTOM_LEFT,
+            ("bottom", "center"): Anchor.BOTTOM_CENTER,
+            ("bottom", "right"): Anchor.BOTTOM_RIGHT,
+        }
+
+        s = s.lower()
+        parts = s.replace("_", "-").split("-")
+        if len(parts) == 1:
+            key = [parts[0]]
+        elif len(parts) == 2:
+            key = [parts[0], parts[1]]
+            key.sort()
+        anchor = OPTIONS.get(tuple(key))
+
+        if anchor is not None:
+            return anchor
+
+        raise ValueError(f"Invalid anchor: {s}")
+
+    @property
+    def is_top(self) -> bool:
+        return "top" in self.value
+
+    @property
+    def is_bottom(self) -> bool:
+        return "bottom" in self.value
+
+    @property
+    def is_left(self) -> bool:
+        return "left" in self.value
+
+    @property
+    def is_right(self) -> bool:
+        return "right" in self.value
+
+    @property
+    def is_center(self) -> bool:
+        return "center" in self.value
+
+
+class PadHeight(str, Enum):
+    NONE = "none"
+    ROW = "row"
+    ALL = "all"
+
+    @classmethod
+    def coerce(cls, pad_height: "PadHeight | str") -> "PadHeight":
+        if isinstance(pad_height, PadHeight):
+            return pad_height
+        elif isinstance(pad_height, str):
+            return PadHeight.from_string(pad_height)
+        else:
+            raise ValueError(f"Invalid pad_height: {pad_height}")
+
+    @classmethod
+    def from_string(cls, s: str) -> "PadHeight":
+        s = s.lower()
+        if s in ("none", "row", "all"):
+            return PadHeight(s)
+        raise ValueError(f"Invalid pad_height: {s}")
 
 @dataclass
 class Blob:
@@ -147,15 +242,12 @@ def find_blobs(image: Image.Image) -> tuple[list[Blob], np.ndarray | None]:
 def magentify(
     image: Image.Image,
     pad: int = 1,  # padding between blobs
-    anchor: Literal["top", "bottom"] = "top",
-    pad_height: Literal["none", "row", "all"] = "none",
+    anchor: Anchor | Literal["top", "bottom"] = "top",
+    pad_height: PadHeight | Literal["none", "row", "all"] = "none",
     verbose: bool = False,
 ) -> Image.Image:
-    if anchor not in ["top", "bottom"]:
-        raise ValueError(f"Invalid anchor: {anchor}")
-
-    if pad_height not in ["none", "row", "all"]:
-        raise ValueError(f"Invalid pad_height: {pad_height}")
+    anchor = Anchor.coerce(anchor)
+    pad_height = PadHeight.coerce(pad_height)
 
     image = image.convert("RGBA")
 
@@ -246,9 +338,9 @@ def magentify(
     for i, b in enumerate(blobs):
         blob_image_data = image_data[b.min_y : b.max_y + 1, b.min_x : b.max_x + 1, :]
 
-        if anchor == "top":
+        if anchor.is_top:
             k = sum(max_heights[:m]) + (m + 1) * pad
-        elif anchor == "bottom":
+        elif anchor.is_bottom:
             delta = max_heights[m] - (b.max_y - b.min_y + 1)
             k = sum(max_heights[:m]) + (m + 1) * pad + delta
 
@@ -263,12 +355,12 @@ def magentify(
         if pad_height != "none":
             delta = max_heights[m] - (b.max_y - b.min_y + 1)
             if delta > 0:
-                if anchor == "top":
+                if anchor.is_top:
                     new_slice = slice(
                         k + b.max_y - b.min_y + 1,
                         k + b.max_y - b.min_y + 1 + delta,
                     )
-                elif anchor == "bottom":
+                elif anchor.is_bottom:
                     new_slice = slice(k - delta, k)
 
                 region = (new_slice, *region[1:])
@@ -320,7 +412,7 @@ def main() -> None:
     parser.add_argument(
         "--anchor",
         help="Anchor the blobs to the top or bottom of the boxes. Becomes irrelevant if the blobs have the same height.",
-        choices=["top", "bottom"],
+        type=Anchor.coerce,
         default="top",
     )
 
@@ -333,7 +425,7 @@ def main() -> None:
     parser.add_argument(
         "--pad-height",
         help="Pad the height of the output image. Each blob will be held at the anchor and padded to the height of the tallest blob in the row.",
-        choices=["none", "row", "all"],
+        type=PadHeight.coerce,
         default="none",
     )
 
