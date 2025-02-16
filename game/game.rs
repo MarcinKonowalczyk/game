@@ -92,7 +92,15 @@ unsafe fn handle_keys(state: &mut State) {
 }
 
 unsafe fn handle_mouse(state: &mut State) {
-    state.mouse_pos = raylib::GetMousePosition();
+    let mut mouse_pos = raylib::GetMousePosition();
+    let is_outside = mouse_pos.x < 0.0
+        || mouse_pos.y < 0.0
+        || mouse_pos.x > WINDOW_WIDTH as f32
+        || mouse_pos.y > WINDOW_HEIGHT as f32;
+    if is_outside {
+        mouse_pos = Vector2 { x: -1.0, y: -1.0 };
+    }
+    state.mouse_pos = mouse_pos;
     state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
 }
 
