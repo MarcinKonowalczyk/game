@@ -1,6 +1,8 @@
 #[cfg(feature = "native")]
 use libloading::{Library, Symbol};
+
 use raylib_wasm::*;
+
 #[cfg(feature = "native")]
 use raylib_wasm::KeyboardKey as Key;
 

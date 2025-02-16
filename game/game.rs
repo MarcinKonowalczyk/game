@@ -1,4 +1,8 @@
-use raylib_wasm::{KeyboardKey as KEY, *};
+use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
+use raylib_wasm as raylib;
+
+mod webhacks;
+use crate::webhacks::State;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -6,42 +10,90 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
-pub struct State {
-    rect: Rectangle,
-    speed: f32,
-    mouse_pos: Vector2
-}
-
 #[no_mangle]
 pub unsafe fn game_init() -> State {
-    SetTargetFPS(144);
-    init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
+    webhacks::log("game_init".to_string());
+
+    // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
+    // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
+    // See: https://github.com/raysan5/raylib/issues/3354
+    // Apparently this is known and solutions are unplanned. I guess it's not that much of a problem from C.
+
+    // SetTargetFPS(300);
+
+    raylib::init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
+
+    webhacks::init_audio_device();
+
+    let music = webhacks::load_music_stream("assets/hello_03.wav");
+
+    // SetMusicVolume(music, 1.0);
+
+    webhacks::play_music_stream(music);
+
+    let font = webhacks::load_font("assets/Kavoon-Regular.ttf");
+
+    // Load slime texture
+    // Blue_Slime-Idle-mag.png
+    webhacks::log("loading texture from rust".to_string());
+    let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
+    webhacks::log("loaded texture from rust".to_string());
 
     State {
         rect: Rectangle {
-            x: (WINDOW_WIDTH as f32 - 100.0)/2.0,
-            y: (WINDOW_HEIGHT as f32 - 100.0)/2.0,
+            x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
+            y: (WINDOW_HEIGHT as f32 - 100.0) / 2.0,
             width: 100.0,
-            height: 100.0
+            height: 100.0,
         },
         speed: 850.0,
-        mouse_pos: Vector2 { x: 0.0, y: 0.0 }
+        mouse_pos: Vector2 { x: 0.0, y: 0.0 },
+        mouse_btn: false,
+        music: Some(music),
+        font: Some(font),
+        texture: Some(texture),
     }
 }
 
 unsafe fn handle_keys(state: &mut State) {
-    if IsKeyDown(KEY::Space)  { state.speed = SPEED_BOOSTED }
-    if !IsKeyDown(KEY::Space) { state.speed = SPEED_DEFAULT }
+    if raylib::IsKeyDown(KEY::Space) {
+        state.speed = SPEED_BOOSTED
+    }
+    if !raylib::IsKeyDown(KEY::Space) {
+        state.speed = SPEED_DEFAULT
+    }
 
-    let dt = GetFrameTime();
-    if IsKeyDown(KEY::W)      { state.rect.y -= dt*state.speed }
-    if IsKeyDown(KEY::A)      { state.rect.x -= dt*state.speed }
-    if IsKeyDown(KEY::S)      { state.rect.y += dt*state.speed }
-    if IsKeyDown(KEY::D)      { state.rect.x += dt*state.speed }
+    let dt = raylib::GetFrameTime();
+    if raylib::IsKeyDown(KEY::W) {
+        state.rect.y -= dt * state.speed
+    }
+    if raylib::IsKeyDown(KEY::A) {
+        state.rect.x -= dt * state.speed
+    }
+    if raylib::IsKeyDown(KEY::S) {
+        state.rect.y += dt * state.speed
+    }
+    if raylib::IsKeyDown(KEY::D) {
+        state.rect.x += dt * state.speed
+    }
+
+    // prevent the rect from wandering off the screen too far
+    if state.rect.x < -state.rect.width {
+        state.rect.x = -state.rect.width;
+    } else if state.rect.x > WINDOW_WIDTH as f32 {
+        state.rect.x = WINDOW_WIDTH as f32;
+    }
+
+    if state.rect.y < -state.rect.height {
+        state.rect.y = -state.rect.height;
+    } else if state.rect.y > WINDOW_HEIGHT as f32 {
+        state.rect.y = WINDOW_HEIGHT as f32;
+    }
 }
 
 unsafe fn handle_mouse(state: &mut State) {
-    state.mouse_pos = GetMousePosition();    
+    state.mouse_pos = raylib::GetMousePosition();
+    state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
 }
 
 pub type GameFrame = unsafe fn(state: &mut State);
@@ -51,33 +103,79 @@ pub unsafe fn game_frame(state: &mut State) {
     handle_keys(state);
     handle_mouse(state);
 
-    BeginDrawing(); {
-        ClearBackground(DARKGREEN);
-        draw_text("hello world", 250, 500, 50, RAYWHITE);
+    raylib::BeginDrawing();
+    {
+        raylib::ClearBackground(DARKGREEN);
+        webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
-        DrawRectangleRec(state.rect, RAYWHITE);
+        raylib::DrawRectangle(
+            state.rect.x as i32,
+            state.rect.y as i32,
+            state.rect.width as i32,
+            state.rect.height as i32,
+            RAYWHITE,
+        );
+        if state.texture.is_some() {
+            let texture = state.texture.unwrap();
+            let mut position = Vector2 {
+                x: state.rect.x,
+                y: state.rect.y,
+            };
+            let rotation = 0.0;
 
-        DrawFPS(WINDOW_WIDTH - 100, 10);
+            // figure out how to scale the texture to the size of the rect
+            #[cfg(feature = "web")]
+            let width = webhacks::get_texture_width(texture);
+            #[cfg(feature = "native")]
+            let width = texture.width;
 
-        let rect_pos = format!{
+            #[cfg(feature = "web")]
+            let height = webhacks::get_texture_height(texture);
+            #[cfg(feature = "native")]
+            let height = texture.height;
+
+            let scale = state.rect.width / width as f32;
+
+            // Move the texture so it's at the bottom of the rect
+            let scaled_height = height as f32 * scale;
+            position.y += state.rect.height - scaled_height;
+
+            let tint = RAYWHITE;
+            webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
+        } else {
+        }
+
+        let rect_pos = format! {
             "rect: [{x}, {y}]",
             x = state.rect.x.round(),
             y = state.rect.y.round()
         };
-        draw_text(&rect_pos, 10, 10, 20, RAYWHITE);
+        webhacks::draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
 
-        let mouse_pos = format!{
+        let mouse_pos = format! {
             "mouse: [{x}, {y}]",
             x = state.mouse_pos.x.round(),
             y = state.mouse_pos.y.round()
         };
-        draw_text(&mouse_pos, 10, 30, 20, RAYWHITE);
+        webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
-        DrawCircle(state.mouse_pos.x as i32, state.mouse_pos.y as i32, 10.0, RAYWHITE);
-    } EndDrawing();
+        let color = if state.mouse_btn { RED } else { RAYWHITE };
+
+        raylib::DrawCircle(
+            state.mouse_pos.x as i32,
+            state.mouse_pos.y as i32,
+            10.0,
+            color,
+        );
+    }
+    raylib::EndDrawing();
+
+    if state.music.is_some() {
+        webhacks::update_music_stream(state.music.unwrap());
+    }
 }
 
 #[no_mangle]
 pub unsafe fn game_over() {
-    CloseWindow();
+    raylib::CloseWindow();
 }
