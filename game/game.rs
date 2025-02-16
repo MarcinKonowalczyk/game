@@ -1,8 +1,10 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
-use raylib_wasm as raylib;
+use raylib_wasm::{self as raylib, cstr};
 
 mod webhacks;
 use crate::webhacks::State;
+
+mod anim;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -36,8 +38,15 @@ pub unsafe fn game_init() -> State {
     // Load slime texture
     // Blue_Slime-Idle-mag.png
     webhacks::log("loading texture from rust".to_string());
-    let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
+    let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
+
+    let texture = raylib::LoadTextureFromImage(image);
+    // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
     webhacks::log("loaded texture from rust".to_string());
+
+    anim::parse_anim(image);
+
+    raylib::UnloadImage(image);
 
     State {
         rect: Rectangle {
@@ -116,13 +125,6 @@ pub unsafe fn game_frame(state: &mut State) {
         raylib::ClearBackground(DARKGREEN);
         webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
-        raylib::DrawRectangle(
-            state.rect.x as i32,
-            state.rect.y as i32,
-            state.rect.width as i32,
-            state.rect.height as i32,
-            RAYWHITE,
-        );
         if state.texture.is_some() {
             let texture = state.texture.unwrap();
             let mut position = Vector2 {
@@ -149,8 +151,34 @@ pub unsafe fn game_frame(state: &mut State) {
             position.y += state.rect.height - scaled_height;
 
             let tint = RAYWHITE;
-            webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
+            // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
+
+            raylib::DrawTexturePro(
+                texture,
+                Rectangle {
+                    x: 1.0,
+                    y: 1.0,
+                    width: 22.0,
+                    height: 22.0,
+                },
+                Rectangle {
+                    x: position.x,
+                    y: position.y,
+                    width: state.rect.width,
+                    height: scaled_height,
+                },
+                Vector2 { x: 0.0, y: 0.0 },
+                rotation,
+                tint,
+            );
         } else {
+            raylib::DrawRectangle(
+                state.rect.x as i32,
+                state.rect.y as i32,
+                state.rect.width as i32,
+                state.rect.height as i32,
+                RAYWHITE,
+            );
         }
 
         let rect_pos = format! {
