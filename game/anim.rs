@@ -1,4 +1,5 @@
 use raylib_wasm::{self as raylib, Color};
+use crate::webhacks;
 
 ////////////////////////
 struct ScopeCall<F: FnMut()> {
@@ -25,7 +26,7 @@ fn is_magenta(color: Color) -> bool {
     color.r == MAGENTA.r && color.g == MAGENTA.g && color.b == MAGENTA.b
 }
 
-pub fn parse_anim(image: raylib::Image) -> Vec<Blob> {
+pub fn parse_anim(image: webhacks::Image) -> Vec<Blob> {
     
     let blobs = find_blobs(image);
 
@@ -69,10 +70,15 @@ struct FindBlobsData {
     stack: Vec<(usize, usize)>
 }
 
-fn image_to_colors(image: raylib::Image) -> (Vec<Color>, usize, usize) {
-    let n = image.width as usize * image.height as usize;
-    let _colors = unsafe { raylib::LoadImageColors(image) };
-    defer! { unsafe { raylib::UnloadImageColors(_colors) } }
+fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
+    let width = webhacks::get_image_width(image) as usize;
+    let height = webhacks::get_image_height(image) as usize;
+    
+    let n = width * height;
+    
+    let _colors = webhacks::load_image_colors(image);
+    // defer! { unsafe { raylib::UnloadImageColors(_colors) } }
+    defer! { webhacks::unload_image_colors(_colors) }
 
     // Create a new rust vec from the raw pointer
     // let colors = unsafe { Vec::from_raw_parts(_colors, n, n) };
@@ -85,11 +91,11 @@ fn image_to_colors(image: raylib::Image) -> (Vec<Color>, usize, usize) {
         colors.push(unsafe { *_colors.add(i) });
     }
 
-    return (colors, image.width as usize, image.height as usize);
+    return (colors, width, height);
 }
 
 impl FindBlobsData {
-    fn from_image(image: raylib::Image) -> FindBlobsData {
+    fn from_image(image: webhacks::Image) -> FindBlobsData {
         let (colors, width, height) = image_to_colors(image);
         let visited = vec![false; colors.len()];
         let stack = Vec::new();
@@ -154,9 +160,11 @@ impl FindBlobsData {
     }
 }
 
-fn find_blobs(image: raylib::Image) -> Vec<Blob> {
+fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     let mut blobs = Vec::new();
-    if image.width <= 2 || image.height <= 2 {
+    let width = webhacks::get_image_width(image);
+    let height = webhacks::get_image_height(image);
+    if width <= 2 || height <= 2 {
         // Texture too small. Definitely not a sprite sheet. Return empty list.
         return blobs;
     }
@@ -164,7 +172,6 @@ fn find_blobs(image: raylib::Image) -> Vec<Blob> {
     let mut dat = FindBlobsData::from_image(image);
 
     // Find all blobs.
-    let mut i = 0;
     for x in 0..dat.width {
         for y in 0..dat.height {
             let color = dat.visit(x, y);
@@ -194,8 +201,6 @@ fn find_blobs(image: raylib::Image) -> Vec<Blob> {
             }
             
             blobs.push(blob);
-
-            i += 1;
         }
     }
 

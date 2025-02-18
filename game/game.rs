@@ -1,5 +1,5 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
-use raylib_wasm::{self as raylib, cstr, GetTime};
+use raylib_wasm::{self as raylib};
 
 mod webhacks;
 
@@ -20,8 +20,10 @@ pub struct State {
     pub speed: f32,
     pub mouse_pos: Vector2,
     pub mouse_btn: bool,
-    pub webhacks: webhacks::State,
-    pub anim_blobs: Option<Vec<anim::Blob>>,
+    pub music: webhacks::Music,
+    pub font: webhacks::Font,
+    pub texture: webhacks::Texture,
+    pub anim_blobs: Vec<anim::Blob>,
 }
 
 
@@ -51,15 +53,18 @@ pub unsafe fn game_init() -> State {
     // Load slime texture
     // Blue_Slime-Idle-mag.png
     webhacks::log("loading texture from rust".to_string());
-    let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
+    // let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
+    let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
-    let texture = raylib::LoadTextureFromImage(image);
+    // let texture = raylib::LoadTextureFromImage(image);
+    let texture = webhacks::load_texture_from_image(image);
     // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
     webhacks::log("loaded texture from rust".to_string());
 
     let anim_blobs = anim::parse_anim(image);
 
-    raylib::UnloadImage(image);
+    // raylib::UnloadImage(image);
+    webhacks::unload_image(image);
 
     State {
         frame_count: 0,
@@ -72,13 +77,10 @@ pub unsafe fn game_init() -> State {
         speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
         mouse_btn: false,
-        webhacks: webhacks::State {
-
-            music: Some(music),
-            font: Some(font),
-            texture: Some(texture),
-        },
-        anim_blobs: Some(anim_blobs),
+        music: music,
+        font: font,
+        texture: texture,
+        anim_blobs: anim_blobs,
     }
 }
 
@@ -143,7 +145,7 @@ pub type GameFrame = unsafe fn(state: &mut State);
 #[no_mangle]
 pub unsafe fn game_frame(state: &mut State) {
 
-    let t = GetTime();
+    let t = webhacks::get_time();
 
     handle_keys(state);
     handle_mouse(state);
@@ -151,76 +153,59 @@ pub unsafe fn game_frame(state: &mut State) {
     raylib::BeginDrawing();
     {
         raylib::ClearBackground(DARKGREEN);
-        webhacks::draw_text(state.webhacks.font, "hello world", 250, 500, 50, RAYWHITE);
+        webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
-        if state.webhacks.texture.is_some() {
-            let texture = state.webhacks.texture.unwrap();
-            let mut position = Vector2 {
-                x: state.rect.x,
-                y: state.rect.y,
-            };
-            let rotation = 0.0;
+        let mut position = Vector2 {
+            x: state.rect.x,
+            y: state.rect.y,
+        };
+        let rotation = 0.0;
 
-            // figure out how to scale the texture to the size of the rect
-            #[cfg(feature = "web")]
-            let width = webhacks::get_texture_width(texture);
-            #[cfg(feature = "native")]
-            let width = texture.width;
+        // figure out how to scale the texture to the size of the rect
+        let width = webhacks::get_texture_width(state.texture);
+        let height = webhacks::get_texture_height(state.texture);
 
-            #[cfg(feature = "web")]
-            let height = webhacks::get_texture_height(texture);
-            #[cfg(feature = "native")]
-            let height = texture.height;
+        let scale = state.rect.width / width as f32;
 
-            let scale = state.rect.width / width as f32;
+        // Move the texture so it's at the bottom of the rect
+        let scaled_height = height as f32 * scale;
+        position.y += state.rect.height - scaled_height;
 
-            // Move the texture so it's at the bottom of the rect
-            let scaled_height = height as f32 * scale;
-            position.y += state.rect.height - scaled_height;
+        let tint = RAYWHITE;
+        // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
-            let tint = RAYWHITE;
-            // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
+        let anim_blobs = &state.anim_blobs;
+        let i= time_to_anim_frame(t, 0.1, anim_blobs.len() as u32);
+        let source = anim_blobs[i as usize].to_rect();
 
-            let anim_blobs = state.anim_blobs.as_ref().unwrap();
-            let i= time_to_anim_frame(t, 0.1, anim_blobs.len() as u32);
-            let source = anim_blobs[i as usize].to_rect();
-
-            raylib::DrawTexturePro(
-                texture,
-                source,
-                Rectangle {
-                    x: position.x,
-                    y: position.y,
-                    width: state.rect.width,
-                    height: scaled_height,
-                },
-                Vector2 { x: 0.0, y: 0.0 },
-                rotation,
-                tint,
-            );
-        } else {
-            raylib::DrawRectangle(
-                state.rect.x as i32,
-                state.rect.y as i32,
-                state.rect.width as i32,
-                state.rect.height as i32,
-                RAYWHITE,
-            );
-        }
+        // raylib::DrawTexturePro(
+        webhacks::draw_texture_pro(
+            state.texture,
+            source,
+            Rectangle {
+                x: position.x,
+                y: position.y,
+                width: state.rect.width,
+                height: scaled_height,
+            },
+            Vector2 { x: 0.0, y: 0.0 },
+            rotation,
+            tint,
+        );
 
         let rect_pos = format! {
             "rect: [{x}, {y}]",
             x = state.rect.x.round(),
             y = state.rect.y.round()
         };
-        webhacks::draw_text(state.webhacks.font, &rect_pos, 10, 10, 20, RAYWHITE);
+        webhacks::draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
 
         let mouse_pos = format! {
             "mouse: [{x}, {y}]",
             x = state.mouse_pos.x.round(),
             y = state.mouse_pos.y.round()
         };
-        webhacks::draw_text(state.webhacks.font, &mouse_pos, 10, 30, 20, RAYWHITE);
+        webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
         let color = if state.mouse_btn { RED } else { RAYWHITE };
 
@@ -234,10 +219,8 @@ pub unsafe fn game_frame(state: &mut State) {
     raylib::EndDrawing();
 
     // Update the music stream
-    if state.webhacks.music.is_some() {
-        webhacks::update_music_stream(state.webhacks.music.unwrap());
-    }
-
+    webhacks::update_music_stream(state.music);
+    
     // Update the frame count
     state.frame_count += 1;
 
