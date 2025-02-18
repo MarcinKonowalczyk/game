@@ -63,21 +63,21 @@ pub mod ffi {
             tint: *const Color,
         );
         pub fn GetTime() -> f64;
-        pub fn LoadImageColors(image: u32) -> *mut Color;
+        pub fn LoadImageColors(image: Image) -> *mut Color;
         pub fn UnloadImageColors(colors: *mut Color);
-        pub fn GetImageWidth(image: u32) -> i32;
-        pub fn GetImageHeight(image: u32) -> i32;
+        pub fn GetImageWidth(image: Image) -> i32;
+        pub fn GetImageHeight(image: Image) -> i32;
         pub fn DrawTexturePro_(
-            texture: u32,
+            texture: Texture,
             sourceRec: raylib::Rectangle,
             destRec: raylib::Rectangle,
             origin: raylib::Vector2,
             rotation: f32,
             tint: *const Color,
         );
-        pub fn UnloadImage(image: u32);
-        pub fn LoadTextureFromImage(image: u32) -> u32;
-        pub fn LoadImage(file_path: *const i8) -> u32;
+        pub fn UnloadImage(image: Image);
+        pub fn LoadTextureFromImage(image: Image) -> Texture;
+        pub fn LoadImage(file_path: *const i8) -> Image;
     }
 }
 

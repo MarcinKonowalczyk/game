@@ -294,7 +294,7 @@ function tryToPlayAudio() {
 }
 
 let images = new Map();
-
+let textures = new Map();
 let wasm = undefined;
 let dt = undefined;
 let wf = undefined;
@@ -482,7 +482,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             console.log(id);
 
-            images[id] = img;
+            textures[id] = img;
 
             // Some info we already know
             // result[0] = id;
@@ -491,7 +491,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             console.log("Loading image", id, file_path);
             // img.onload = () => {
-            //     images[id] = img;
+            //     textures[id] = img;
             // };
             img.src = file_path;
             
@@ -500,21 +500,21 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             return id;
         },
         GetTextureWidth: (id) => {
-            const img = images[id];
+            const img = textures[id];
             if (img === undefined) {
                 return 0;
             }
             return img.width;
         },
         GetTextureHeight: (id) => {
-            const img = images[id];
+            const img = textures[id];
             if (img === undefined) {
                 return 0;
             }
             return img.height;
         },
         DrawTextureEx_: (id, x, y, rotation, scale, color_ptr) => {
-            const img = images[id];
+            const img = textures[id];
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(rotation);
@@ -572,6 +572,57 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         UpdateMusicStream: (_audio_id) => {
             tryToPlayAudio();
         },
+        // pub fn LoadImage(file_path: *const i8) -> u32;
+        LoadImage: (file_path_ptr) => {
+            const buffer = wf.memory.buffer;
+            const file_path = cstr_by_ptr(buffer, file_path_ptr);
+            let img = new Image();
+            var id = Math.floor(Math.random() * 1000000);
+
+            images[id] = img;
+
+            img.src = file_path;
+
+            img.onload = () => {
+                console.log("Image loaded", id);
+            }
+
+            return id;
+        },
+        // pub fn LoadTextureFromImage(image: u32) -> u32;
+        LoadTextureFromImage: (image_id) => {
+            const img = images[image_id];
+            var tex_id = Math.floor(Math.random() * 1000000);
+            console.log("Loading texture from image {}", image_id, tex_id);
+            textures[tex_id] = img;
+            return tex_id;
+        },
+        // pub fn GetImageWidth(image: u32) -> i32;
+        GetImageWidth: (image_id) => {
+            const img = images[image_id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.width;
+        },
+        // pub fn GetImageHeight(image: u32) -> i32;
+        GetImageHeight: (image_id) => {
+            const img = images[image_id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.height;
+        },
+        // pub fn UnloadImage(image: Image) -> ();
+        UnloadImage: (image_id) => {
+            delete images[image_id];
+        },
+        // pub fn GetTime() -> f64;
+        GetTime: () => {
+            let t = performance.now();
+            console.log(t);
+            return t;
+        }
     })
 }).then(w => {
     wasm = w;
@@ -582,6 +633,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     window.addEventListener("keyup", keyUp);
 
     let state = wf.game_init();
+    if (state === undefined) {
+        console.error("game_init() returned undefined");
+    }
     const next = (timestamp) => {
         if (quit) {
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
