@@ -632,6 +632,43 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
 
+
+    function read_buffer(ptr, n_bytes) {
+        const buffer = wasm.instance.exports.memory.buffer;
+        return new Uint8Array(buffer, ptr, n_bytes);
+    }
+
+    let n_bytes = wf.get_test_state_n_bytes();
+    console.log(n_bytes);
+    let ptr = wf.test();
+    // let buffer = read_buffer(ptr, n_bytes);
+    // pub struct MyRect {
+    //     pub x: f32,
+    //     pub y: f32,
+    //     pub width: f32,
+    //     pub height: f32,
+    // }
+    
+    // pub struct MyState {
+    //     pub a: u8,
+    //     pub b: MyRect,
+    // }
+
+    function read_my_state(ptr, n_bytes) {
+        const buffer = wasm.instance.exports.memory.buffer;
+        var data_view = new DataView(buffer, ptr, n_bytes);
+        var a = data_view.getUint8(0);
+        var b = data_view.getFloat32(1, true);
+        var c = data_view.getFloat32(5, true);
+        var d = data_view.getFloat32(9, true);
+        var e = data_view.getFloat32(13, true);
+        return { a, b, c, d, e };
+    }
+
+    let my_state = read_my_state(ptr, n_bytes);
+
+    console.log(my_state);
+
     let state = wf.game_init();
     if (state === undefined) {
         console.error("game_init() returned undefined");

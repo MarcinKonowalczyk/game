@@ -238,3 +238,54 @@ pub unsafe fn game_frame(state: &mut State) {
 pub unsafe fn game_over() {
     raylib::CloseWindow();
 }
+
+// Keep the layout of these as written here
+
+#[repr(C)]
+pub struct MyRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[repr(C, packed)]
+pub struct MyState {
+    pub a: u8,
+    pub b: MyRect,
+}
+
+#[no_mangle]
+pub unsafe fn get_test_state_n_bytes() -> usize {
+    std::mem::size_of::<MyState>()
+}
+
+#[no_mangle]
+pub unsafe fn test() -> MyState {
+    // State {
+    //     frame_count: 0,
+    //     rect: Rectangle {
+    //         x: 0.0,
+    //         y: 0.0,
+    //         width: 0.0,
+    //         height: 0.0,
+    //     },
+    //     speed: 0.0,
+    //     mouse_pos: Vector2 { x: 0.0, y: 0.0 },
+    //     mouse_btn: false,
+    //     music: webhacks::Music::default(),
+    //     font: webhacks::Font::default(),
+    //     texture: webhacks::Texture::default(),
+    //     anim_blobs: std::ptr::null(),
+    //     anim_frames: 0,
+    // }
+    MyState {
+        a: 1,
+        b: MyRect {
+            x: 2.0,
+            y: 3.0,
+            width: 4.0,
+            height: 5.0,
+        },
+    }
+}
