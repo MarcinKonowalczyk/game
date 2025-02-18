@@ -1,18 +1,12 @@
-use raylib::{cstr, Color, Rectangle, Vector2};
+use raylib::{cstr, Color, Vector2};
 use raylib_wasm as raylib;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
 
-// All of the state that we need to keep track of in the game
-// This is subtly different between the native and web versions,
-// since we use u32 ids for web
+// PArt of the state which is different for native and web
 #[cfg(feature = "native")]
 pub struct State {
-    pub rect: Rectangle,
-    pub speed: f32,
-    pub mouse_pos: Vector2,
-    pub mouse_btn: bool,
     pub music: Option<raylib::Music>,
     pub font: Option<raylib::Font>,
     pub texture: Option<raylib::Texture>,
@@ -20,10 +14,6 @@ pub struct State {
 
 #[cfg(feature = "web")]
 pub struct State {
-    pub rect: Rectangle,
-    pub speed: f32,
-    pub mouse_pos: Vector2,
-    pub mouse_btn: bool,
     pub music: Option<u32>,
     pub font: Option<u32>,
     pub texture: Option<u32>,

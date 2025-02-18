@@ -1,8 +1,7 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
-use raylib_wasm::{self as raylib, cstr};
+use raylib_wasm::{self as raylib, cstr, GetTime};
 
 mod webhacks;
-use crate::webhacks::State;
 
 mod anim;
 
@@ -11,6 +10,20 @@ const WINDOW_HEIGHT: i32 = 600;
 
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
+
+
+// All of the state that we need to keep track of in the game. The bits which are different for native and web
+// are in the webhacks::State.
+pub struct State {
+    pub frame_count: u32,
+    pub rect: Rectangle,
+    pub speed: f32,
+    pub mouse_pos: Vector2,
+    pub mouse_btn: bool,
+    pub webhacks: webhacks::State,
+    pub anim_blobs: Option<Vec<anim::Blob>>,
+}
+
 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
@@ -44,11 +57,12 @@ pub unsafe fn game_init() -> State {
     // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
     webhacks::log("loaded texture from rust".to_string());
 
-    anim::parse_anim(image);
+    let anim_blobs = anim::parse_anim(image);
 
     raylib::UnloadImage(image);
 
     State {
+        frame_count: 0,
         rect: Rectangle {
             x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
             y: (WINDOW_HEIGHT as f32 - 100.0) / 2.0,
@@ -58,11 +72,22 @@ pub unsafe fn game_init() -> State {
         speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
         mouse_btn: false,
-        music: Some(music),
-        font: Some(font),
-        texture: Some(texture),
+        webhacks: webhacks::State {
+
+            music: Some(music),
+            font: Some(font),
+            texture: Some(texture),
+        },
+        anim_blobs: Some(anim_blobs),
     }
 }
+
+
+fn time_to_anim_frame(time: f64, frame_duration: f64, n_frames: u32) -> u32 {
+    let frame = (time / frame_duration) as u32 % n_frames;
+    frame
+}
+
 
 unsafe fn handle_keys(state: &mut State) {
     if raylib::IsKeyDown(KEY::Space) {
@@ -117,16 +142,19 @@ pub type GameFrame = unsafe fn(state: &mut State);
 
 #[no_mangle]
 pub unsafe fn game_frame(state: &mut State) {
+
+    let t = GetTime();
+
     handle_keys(state);
     handle_mouse(state);
 
     raylib::BeginDrawing();
     {
         raylib::ClearBackground(DARKGREEN);
-        webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
+        webhacks::draw_text(state.webhacks.font, "hello world", 250, 500, 50, RAYWHITE);
 
-        if state.texture.is_some() {
-            let texture = state.texture.unwrap();
+        if state.webhacks.texture.is_some() {
+            let texture = state.webhacks.texture.unwrap();
             let mut position = Vector2 {
                 x: state.rect.x,
                 y: state.rect.y,
@@ -153,14 +181,13 @@ pub unsafe fn game_frame(state: &mut State) {
             let tint = RAYWHITE;
             // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
+            let anim_blobs = state.anim_blobs.as_ref().unwrap();
+            let i= time_to_anim_frame(t, 0.1, anim_blobs.len() as u32);
+            let source = anim_blobs[i as usize].to_rect();
+
             raylib::DrawTexturePro(
                 texture,
-                Rectangle {
-                    x: 1.0,
-                    y: 1.0,
-                    width: 22.0,
-                    height: 22.0,
-                },
+                source,
                 Rectangle {
                     x: position.x,
                     y: position.y,
@@ -186,14 +213,14 @@ pub unsafe fn game_frame(state: &mut State) {
             x = state.rect.x.round(),
             y = state.rect.y.round()
         };
-        webhacks::draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
+        webhacks::draw_text(state.webhacks.font, &rect_pos, 10, 10, 20, RAYWHITE);
 
         let mouse_pos = format! {
             "mouse: [{x}, {y}]",
             x = state.mouse_pos.x.round(),
             y = state.mouse_pos.y.round()
         };
-        webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
+        webhacks::draw_text(state.webhacks.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
         let color = if state.mouse_btn { RED } else { RAYWHITE };
 
@@ -206,9 +233,14 @@ pub unsafe fn game_frame(state: &mut State) {
     }
     raylib::EndDrawing();
 
-    if state.music.is_some() {
-        webhacks::update_music_stream(state.music.unwrap());
+    // Update the music stream
+    if state.webhacks.music.is_some() {
+        webhacks::update_music_stream(state.webhacks.music.unwrap());
     }
+
+    // Update the frame count
+    state.frame_count += 1;
+
 }
 
 #[no_mangle]
