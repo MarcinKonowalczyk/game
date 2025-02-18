@@ -644,6 +644,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         }
         dt = (timestamp - prev) / 1000.0;
         prev = timestamp;
+        console.log(state);
         wf.game_frame(state);
         window.requestAnimationFrame(next);
     };

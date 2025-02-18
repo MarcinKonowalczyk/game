@@ -20,22 +20,35 @@ macro_rules! defer {
 
 ////////////////////////
 
+#[cfg(feature = "native")]
+pub type Blobs = Vec<Blob>;
+#[cfg(feature = "web")]
+pub type Blobs = *const Blob;
+
+pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
+
+    let vec_blobs = find_blobs(image);
+    let num = vec_blobs.len();
+
+    #[cfg(feature = "native")]
+    let blobs = vec_blobs;
+
+    #[cfg(feature = "web")]
+    let blobs = vec_blobs.as_ptr();
+
+    return (blobs, num);
+}
+
+////////////////////////
+
 const MAGENTA: Color = Color { r: 255, g: 0, b: 255, a: 255 };
 
 fn is_magenta(color: Color) -> bool {
     color.r == MAGENTA.r && color.g == MAGENTA.g && color.b == MAGENTA.b
 }
 
-pub fn parse_anim(image: webhacks::Image) -> Vec<Blob> {
-    
-    let blobs = find_blobs(image);
-
-    return blobs;
-
-}
-
-////////////////////////
-
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct Blob {
     pub x_min: usize,
     pub y_min: usize,

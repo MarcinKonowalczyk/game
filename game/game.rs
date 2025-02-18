@@ -23,7 +23,8 @@ pub struct State {
     pub music: webhacks::Music,
     pub font: webhacks::Font,
     pub texture: webhacks::Texture,
-    pub anim_blobs: Vec<anim::Blob>,
+    pub anim_blobs: anim::Blobs,
+    pub anim_frames: usize,
 }
 
 
@@ -61,7 +62,7 @@ pub unsafe fn game_init() -> State {
     // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
     webhacks::log("loaded texture from rust".to_string());
 
-    let anim_blobs = anim::parse_anim(image);
+    let (anim_blobs, anim_frames) = anim::parse_anim(image);
 
     // raylib::UnloadImage(image);
     webhacks::unload_image(image);
@@ -81,6 +82,7 @@ pub unsafe fn game_init() -> State {
         font: font,
         texture: texture,
         anim_blobs: anim_blobs,
+        anim_frames: anim_frames,
     }
 }
 
@@ -175,8 +177,14 @@ pub unsafe fn game_frame(state: &mut State) {
         // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
         let anim_blobs = &state.anim_blobs;
-        let i= time_to_anim_frame(t, 0.1, anim_blobs.len() as u32);
-        let source = anim_blobs[i as usize].to_rect();
+        let i= time_to_anim_frame(t, 0.1, state.anim_frames as u32);
+        
+        #[cfg(feature = "native")]
+        let blob = anim_blobs[i as usize];
+        #[cfg(feature = "web")]
+        let blob = unsafe { * anim_blobs.wrapping_add(i as usize) };
+        
+        let source = blob.to_rect();
 
         // raylib::DrawTexturePro(
         webhacks::draw_texture_pro(
