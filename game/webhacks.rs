@@ -33,15 +33,15 @@ pub mod ffi {
     use super::*;
     unsafe extern "C" {
         pub fn InitAudioDevice();
-        pub fn PlayMusicStream(music: u32);
-        pub fn UpdateMusicStream(music: u32);
+        pub fn PlayMusicStream(music: Music);
+        pub fn UpdateMusicStream(music: Music);
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
         // pub fn IsMusicReady(music: u32) -> bool;
         pub fn IsMouseButtonDown(button: i32) -> bool;
         pub fn ConsoleLog_(msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
         pub fn DrawTextEx_(
-            font: u32,
+            font: Font,
             text: *const i8,
             positionX: i32,
             positionY: i32,
@@ -51,11 +51,11 @@ pub mod ffi {
         );
         // pub fn LoadTexture_(file_path: *const i8) -> u32;
         // #[no_mangle]
-        pub fn LoadTexture(file_path: *const i8) -> u32;
-        pub fn GetTextureWidth(texture: u32) -> i32;
-        pub fn GetTextureHeight(texture: u32) -> i32;
+        pub fn LoadTexture(file_path: *const i8) -> Texture;
+        pub fn GetTextureWidth(texture: Texture) -> i32;
+        pub fn GetTextureHeight(texture: Texture) -> i32;
         pub fn DrawTextureEx_(
-            texture: u32,
+            texture: Texture,
             positionX: i32,
             positionY: i32,
             rotation: f32,
@@ -212,23 +212,17 @@ pub fn load_music_stream(file_path: &str) -> raylib::Music {
     unsafe { raylib::LoadMusicStream(cstr!(file_path)) }
 }
 
-#[cfg(feature = "web")]
 pub fn init_audio_device() {
+    #[cfg(feature = "web")]
     unsafe { ffi::InitAudioDevice() }
-}
-
-#[cfg(feature = "native")]
-pub fn init_audio_device() {
+    #[cfg(feature = "native")]
     unsafe { raylib::InitAudioDevice() }
 }
 
-#[cfg(feature = "web")]
 pub fn get_time() -> f64 {
+    #[cfg(feature = "web")]
     unsafe { ffi::GetTime() }
-}
-
-#[cfg(feature = "native")]
-pub fn get_time() -> f64 {
+    #[cfg(feature = "native")]
     unsafe { raylib::GetTime() }
 }
 
