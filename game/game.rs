@@ -14,17 +14,21 @@ const SPEED_BOOSTED: f32 = 1550.0;
 
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
 // are in the webhacks::State.
+#[repr(C, align(4))]
+#[derive(Clone)]
 pub struct State {
+    pub all_loaded: bool,
     pub frame_count: u32,
     pub rect: Rectangle,
     pub speed: f32,
     pub mouse_pos: Vector2,
-    pub mouse_btn: bool,
+    pub mouse_btn: u32,
     pub music: webhacks::Music,
     pub font: webhacks::Font,
+    pub image: webhacks::Image,
     pub texture: webhacks::Texture,
-    pub anim_blobs: anim::Blobs,
-    pub anim_frames: usize,
+    pub anim_frames: u32, // not usize to keep a predictable alignment
+    pub anim_blobs: anim::Blobs, // as many as anim_frames
 }
 
 
@@ -53,22 +57,13 @@ pub unsafe fn game_init() -> State {
 
     // Load slime texture
     // Blue_Slime-Idle-mag.png
-    webhacks::log("loading texture from rust".to_string());
+    // webhacks::log("loading texture from rust".to_string());
     // let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
-    // let texture = raylib::LoadTextureFromImage(image);
-    let texture = webhacks::load_texture_from_image(image);
-    // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
-    webhacks::log("loaded texture from rust".to_string());
-
-    let (anim_blobs, anim_frames) = anim::parse_anim(image);
-
-    // raylib::UnloadImage(image);
-    webhacks::unload_image(image);
-
     State {
-        frame_count: 0,
+        all_loaded: false,
+        frame_count: 99,
         rect: Rectangle {
             x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
             y: (WINDOW_HEIGHT as f32 - 100.0) / 2.0,
@@ -77,13 +72,93 @@ pub unsafe fn game_init() -> State {
         },
         speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
-        mouse_btn: false,
+        mouse_btn: 0,
         music: music,
         font: font,
-        texture: texture,
-        anim_blobs: anim_blobs,
-        anim_frames: anim_frames,
+        image: image,
+        texture: 0,
+        anim_frames: 0,
+        anim_blobs: std::ptr::null(),
     }
+}
+
+#[no_mangle]
+pub unsafe fn game_load(state: &mut State) {
+    if state.all_loaded {
+        return;
+    }
+
+    let mut any_not_loaded = false;
+
+    // check if the music is loaded
+    if !webhacks::is_music_loaded(state.music) {
+        webhacks::log("music not loaded".to_string());
+        any_not_loaded = true;
+    }
+
+    // check if the font is loaded
+    if !webhacks::is_font_loaded(state.font) {
+        webhacks::log("font not loaded".to_string());
+        any_not_loaded = true;
+    }
+
+    // check if the image is loaded
+    if !webhacks::is_image_loaded(state.image) {
+        webhacks::log("image not loaded".to_string());
+        any_not_loaded = true;
+    } else {
+        // image is loaded! let's load the texture
+        // state.texture = webhacks::load_texture_from_image(state.image);
+
+        if state.texture == 0 {
+            state.texture = webhacks::load_texture_from_image(state.image);
+        }
+
+        if !webhacks::is_texture_loaded(state.texture) {
+            webhacks::log("texture not loaded".to_string());
+            any_not_loaded = true;
+        } else {
+            // texture is loaded! let's parse the animation
+            let (anim_blobs, anim_frames) = anim::parse_anim(state.image);
+            state.anim_blobs = anim_blobs;
+            state.anim_frames = anim_frames as u32;
+        }
+    }
+
+    if any_not_loaded {
+        webhacks::log("not all assets loaded".to_string());
+    } else {
+        // state.all_loaded = true;
+        webhacks::log("all assets loaded".to_string());
+    }
+
+
+
+    // // let texture = raylib::LoadTextureFromImage(image);
+    // let texture = webhacks::load_texture_from_image(image);
+    // // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
+    // webhacks::log("loaded texture from rust".to_string());
+
+    // let (anim_blobs, anim_frames) = anim::parse_anim(image);
+
+    // // raylib::UnloadImage(image);
+    // webhacks::unload_image(image);
+
+    // let first_blob = anim::index_blobs(&anim_blobs, 0);
+
+    // webhacks::log(format!("first blob: {:?}", first_blob));
+    // webhacks::log(format!("anim_frames: {}", anim_frames));
+
+
+
+    // let is_music_loaded = webhacks::is_music_loaded(state.music);
+    // con
+
+
+    // let t = webhacks::get_time();
+    // webhacks::log(format!("game_load: {}", t));
+
+    return;
 }
 
 
@@ -139,7 +214,7 @@ unsafe fn handle_mouse(state: &mut State) {
         mouse_pos = Vector2 { x: -1.0, y: -1.0 };
     }
     state.mouse_pos = mouse_pos;
-    state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
+    state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32;
 }
 
 pub type GameFrame = unsafe fn(state: &mut State);
@@ -215,7 +290,7 @@ pub unsafe fn game_frame(state: &mut State) {
         };
         webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
-        let color = if state.mouse_btn { RED } else { RAYWHITE };
+        let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
 
         raylib::DrawCircle(
             state.mouse_pos.x as i32,
@@ -253,11 +328,8 @@ pub struct MyRect {
 pub struct MyState {
     pub a: u8,
     pub b: MyRect,
-}
-
-#[no_mangle]
-pub unsafe fn get_test_state_n_bytes() -> usize {
-    std::mem::size_of::<MyState>()
+    pub n: usize,
+    pub c: *const MyRect,
 }
 
 #[no_mangle]
@@ -279,6 +351,24 @@ pub unsafe fn test() -> MyState {
     //     anim_blobs: std::ptr::null(),
     //     anim_frames: 0,
     // }
+
+    let my_rect_1 = MyRect {
+        x: 6.0,
+        y: 7.0,
+        width: 8.0,
+        height: 9.0,
+    };
+
+    let my_rect_2 = MyRect {
+        x: 10.0,
+        y: 11.0,
+        width: 12.0,
+        height: 13.0,
+    };
+
+    let arr = [my_rect_1, my_rect_2];
+    // let arr = [my_rect_1];
+
     MyState {
         a: 1,
         b: MyRect {
@@ -287,5 +377,7 @@ pub unsafe fn test() -> MyState {
             width: 4.0,
             height: 5.0,
         },
+        n: 2,
+        c: arr.as_ptr(),
     }
 }

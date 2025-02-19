@@ -402,6 +402,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             return font_id;
         },
+        IsFontLoaded: (font) => {
+            return font_map.has(font);
+        },
         DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing,  color_ptr) => {
             const buffer = wf.memory.buffer;
             const text = cstr_by_ptr(buffer, text_ptr);
@@ -499,6 +502,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             
             return id;
         },
+        IsTextureLoaded: (id) => {
+            return textures[id].complete;
+        },
         GetTextureWidth: (id) => {
             const img = textures[id];
             if (img === undefined) {
@@ -555,16 +561,21 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
 
+            let audio_id = Math.floor(Math.random() * 1000000);
+            console.log("Loading music stream", audio_id, file_path);
+
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
                 console.log(response);
                 initAudioContext(response.url);
-                let audio = new Audio();
-                return -1;
             }).catch((err) => {
                 console.log(err);
-                return -1;
             });
+
+            return audio_id;
+        },
+        IsMusicLoaded: () => {
+            return audio.loop !== undefined;
         },
         PlayMusicStream: (_audio_id) => {
             tryToPlayAudio();
@@ -589,11 +600,14 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             return id;
         },
+        IsImageLoaded: (image_id) => {
+            return images[image_id].complete;
+        },
         // pub fn LoadTextureFromImage(image: u32) -> u32;
         LoadTextureFromImage: (image_id) => {
             const img = images[image_id];
             var tex_id = Math.floor(Math.random() * 1000000);
-            console.log("Loading texture from image {}", image_id, tex_id);
+            console.log("Loading texture from image. Image id: %d, Texture id: %d", image_id, tex_id);
             textures[tex_id] = img;
             return tex_id;
         },
@@ -632,47 +646,145 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
 
-
-    function read_buffer(ptr, n_bytes) {
-        const buffer = wasm.instance.exports.memory.buffer;
-        return new Uint8Array(buffer, ptr, n_bytes);
-    }
-
-    let n_bytes = wf.get_test_state_n_bytes();
-    console.log(n_bytes);
     let ptr = wf.test();
-    // let buffer = read_buffer(ptr, n_bytes);
-    // pub struct MyRect {
-    //     pub x: f32,
-    //     pub y: f32,
-    //     pub width: f32,
-    //     pub height: f32,
-    // }
-    
-    // pub struct MyState {
-    //     pub a: u8,
-    //     pub b: MyRect,
-    // }
 
-    function read_my_state(ptr, n_bytes) {
+    function read_my_state(ptr) {
         const buffer = wasm.instance.exports.memory.buffer;
-        var data_view = new DataView(buffer, ptr, n_bytes);
-        var a = data_view.getUint8(0);
-        var b = data_view.getFloat32(1, true);
-        var c = data_view.getFloat32(5, true);
-        var d = data_view.getFloat32(9, true);
-        var e = data_view.getFloat32(13, true);
+
+        var data_view = new DataView(buffer, ptr);
+        var i = 0;
+        var a = data_view.getUint8(i); i += 1;
+        var b = data_view.getFloat32(i, true); i += 4;
+        var c = data_view.getFloat32(i, true); i += 4;
+        var d = data_view.getFloat32(i, true); i += 4;
+        var e = data_view.getFloat32(i, true); i += 4;
+        
+        var N_C = data_view.getUint32(i, true); i += 4;
+        var ptr_C = data_view.getUint32(i, true); i += 4;
+
+        var C = {};
+        for (i = 0; i < N_C; i++) {
+            var data_view = new DataView(buffer, ptr_C + i * 16, 16);
+            var d1 = data_view.getFloat32(0, true);
+            var d2 = data_view.getFloat32(4, true);
+            var d3 = data_view.getFloat32(8, true);
+            var d4 = data_view.getFloat32(12, true);
+            // console.log(i, d1, d2, d3, d4);
+            C[i] = { d1, d2, d3, d4 };
+        }
+
+        console.log(C);
+
         return { a, b, c, d, e };
     }
 
-    let my_state = read_my_state(ptr, n_bytes);
+    let my_state = read_my_state(ptr);
 
     console.log(my_state);
 
     let state = wf.game_init();
-    if (state === undefined) {
-        console.error("game_init() returned undefined");
+
+    function read_loaded_flag(ptr) {
+        const buffer = wasm.instance.exports.memory.buffer;
+        var data_view = new DataView(buffer, ptr, 4);
+        return data_view.getUint32(0, true) == 1;
     }
+
+    function read_state(ptr) {
+        const buffer = wasm.instance.exports.memory.buffer;
+
+        // state buffer is 4-byte aligned.
+        var data_view = new DataView(buffer, ptr, 256);
+
+        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
+
+        function data_view_to_struct(data_view, schema) {
+
+            let tokens = [];
+            for (let token of scanner(schema)) {
+                tokens.push(token);
+            }
+
+            console.log("tokens:", tokens);
+
+            function _data_view_to_struct(data_view, tokens, offset) {
+
+                if (offset === undefined) {
+                    offset = 0;
+                }
+
+                var out = [];
+                let i = 0;
+                for (let token of tokens) {
+
+                    if (token.type === "error") {
+                        console.error("Error parsing schema", token);
+                        return;
+                    } 
+
+                    if (token.is_array) {
+                        if (token.type === "struct") {
+                            // parse array of structs
+                            // first read the length of the array
+                            console.log("parsing array of structs");
+                            let len = data_view.getUint32(i + offset, true);
+                            i += 4;
+                            console.log("array length", len);
+                            let arr = [];
+                            for (let j = 0; j < len; j++) {
+                                let s = _data_view_to_struct(data_view, token.value, i);
+                                arr.push(s[0]);
+                                i += s[1];
+                            }
+                            console.log("parsed array of structs", arr);
+                            out.push(arr);
+                        }
+                    } else {
+                        // parse single token
+                        if (token.type === "uint32") {
+                            out.push(data_view.getUint32(i + offset, true));
+                            i += 4;
+                        } else if (token.type === "float32") {
+                            out.push(data_view.getFloat32(i + offset, true));
+                            i += 4;
+                        } else if (token.type === "bool") {
+                            // We are 4-byte aligned, so a bool takes 4 bytes
+                            let temp = data_view.getUint32(i + offset);
+                            console.log(temp);
+                            out.push(data_view.getUint32(i + offset) === 1);
+                            i += 4;
+                        } else if (token.type === "struct") {
+                            // recursively parse the struct
+                            let s = _data_view_to_struct(data_view, token.value, i);
+                            out.push(s[0]);
+                            i += s[1];
+                        } else {
+                            console.error("Unknown token type", token);
+                        }
+                    }
+                }
+
+                return [ out, i ];
+    
+            }
+            
+            let out = {};
+            let i = 0;
+            [out, i] = _data_view_to_struct(data_view, tokens);
+
+            console.log(out, i);
+
+
+        }
+        
+        data_view_to_struct(data_view, schema);
+
+    }
+
+    let parsed_state = read_state(ptr);
+
+    console.log(parsed_state);
+
     const next = (timestamp) => {
         if (quit) {
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -681,9 +793,18 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         }
         dt = (timestamp - prev) / 1000.0;
         prev = timestamp;
-        console.log(state);
-        wf.game_frame(state);
-        window.requestAnimationFrame(next);
+        
+        if (read_loaded_flag(ptr)) {
+            wf.game_frame(state);
+        } else {
+            wf.game_load(state);
+        }
+        // window.requestAnimationFrame(next);
+        // DEBUG: slow down the loop
+        setTimeout(() => {
+            window.requestAnimationFrame(next);
+        }, 5000
+        );
     };
     window.requestAnimationFrame((timestamp) => {
         prev = timestamp;
@@ -869,3 +990,60 @@ function loopify(uri, cb) {
 loopify.version = "0.2";
 
 ///////////////////////////////////////////
+
+
+// let schema = "u[ffff]f*{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
+
+function parse_until(schema, i, end) {
+    let label = "";
+    i++;
+    while (schema[i] !== end) {
+        label += schema[i];
+        i++;
+    }
+    return [ label, i ];
+}
+
+function* scanner(schema) {
+    let i = 0;
+    while (i < schema.length) {
+        var out;
+        let char = schema[i];
+        if (char === "u") {
+            out = { type: "uint32", value: char }
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "f") {
+            out = { type: "float32", value: char };
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "b") {
+            out = { type: "bool", value: char };
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "[") {
+            out = { type: "struct"};
+            var content = "";
+            [ content, i ] = parse_until(schema, i, "]");
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+
+            // recursively parse the content
+            out.value = [];
+            for (let token of scanner(content)) {
+                out.value.push(token);
+            }
+            yield out;
+        } else if (char === " " || char === "," || char === "\n") {
+            // silently skip whitespace and commas and newlines
+            i++;
+        } else {
+            yield { type: "error", value: char };
+        }
+
+        i++;
+    }
+}

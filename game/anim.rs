@@ -22,8 +22,17 @@ macro_rules! defer {
 
 #[cfg(feature = "native")]
 pub type Blobs = Vec<Blob>;
+
 #[cfg(feature = "web")]
 pub type Blobs = *const Blob;
+
+pub fn index_blobs(blobs: &Blobs, index: usize) -> Blob {
+    #[cfg(feature = "native")]
+    return blobs[index].clone();
+
+    #[cfg(feature = "web")]
+    return unsafe { *blobs.wrapping_add(index) };
+}
 
 pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
 
@@ -47,22 +56,23 @@ fn is_magenta(color: Color) -> bool {
     color.r == MAGENTA.r && color.g == MAGENTA.g && color.b == MAGENTA.b
 }
 
-#[repr(C)]
+
+#[repr(C, align(4))]
 #[derive(Debug, Copy, Clone)]
 pub struct Blob {
-    pub x_min: usize,
-    pub y_min: usize,
-    pub x_max: usize,
-    pub y_max: usize,
+    pub x_min: u32,
+    pub y_min: u32,
+    pub x_max: u32,
+    pub y_max: u32,
 }
 
 impl Blob {
     pub fn width(&self) -> usize {
-        return self.x_max - self.x_min + 1;
+        return (self.x_max - self.x_min + 1) as usize;
     }
 
     pub fn height(&self) -> usize {
-        return self.y_max - self.y_min + 1;
+        return (self.y_max - self.y_min + 1) as usize;
     }
 
     pub fn to_rect(&self) -> raylib::Rectangle {
@@ -177,6 +187,7 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     let mut blobs = Vec::new();
     let width = webhacks::get_image_width(image);
     let height = webhacks::get_image_height(image);
+    webhacks::log(format!("Image size: {} x {}", width, height));
     if width <= 2 || height <= 2 {
         // Texture too small. Definitely not a sprite sheet. Return empty list.
         return blobs;
@@ -192,7 +203,10 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
                 continue;
             }
 
-            let mut blob = Blob { x_min: x, y_min: y, x_max: x, y_max: y };
+            let x_u32: u32 = x.try_into().unwrap();
+            let y_u32: u32 = y.try_into().unwrap();
+
+            let mut blob = Blob { x_min: x_u32, y_min: y_u32, x_max: x_u32, y_max: y_u32 };
 
             // Flood fill the blob
             dat.clear_stack();
@@ -200,15 +214,19 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
 
             while !dat.stack.is_empty() {
                 let (x, y) = dat.stack.pop().unwrap();
+
                 let color = dat.visit(x, y);
                 if color.is_none() {
                     continue;
                 }
-
-                blob.x_min = blob.x_min.min(x);
-                blob.y_min = blob.y_min.min(y);
-                blob.x_max = blob.x_max.max(x);
-                blob.y_max = blob.y_max.max(y);
+                
+                let x_u32: u32 = x.try_into().unwrap();
+                let y_u32: u32 = y.try_into().unwrap();
+                
+                blob.x_min = blob.x_min.min(x_u32);
+                blob.y_min = blob.y_min.min(y_u32);
+                blob.x_max = blob.x_max.max(x_u32);
+                blob.y_max = blob.y_max.max(y_u32);
 
                 dat.append_neighbours(x, y);
             }
@@ -218,9 +236,9 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     }
 
     // println!("Found {} blobs.", i);
-    // for (i, blob) in blobs.iter().enumerate() {
-    //     println!("Blob {} at ({}, {}) to ({}, {})", i, blob.x_min, blob.y_min, blob.x_max, blob.y_max);
-    // }
+    for (i, blob) in blobs.iter().enumerate() {
+        println!("Blob {} at ({}, {}) to ({}, {})", i, blob.x_min, blob.y_min, blob.x_max, blob.y_max);
+    }
 
     // Sort the blobs by first y, then x
     blobs.sort_by(|a, b| {

@@ -78,6 +78,10 @@ pub mod ffi {
         pub fn UnloadImage(image: Image);
         pub fn LoadTextureFromImage(image: Image) -> Texture;
         pub fn LoadImage(file_path: *const i8) -> Image;
+        pub fn IsMusicLoaded(music: Music) -> bool;
+        pub fn IsFontLoaded(music: Font) -> bool;
+        pub fn IsImageLoaded(music: Image) -> bool;
+        pub fn IsTextureLoaded(music: Texture) -> bool;
     }
 }
 
@@ -141,21 +145,29 @@ pub fn draw_text(font: Font, text: &str, x: i32, y: i32, size: i32, color: Color
 
 pub fn update_music_stream(music: Music) {
     #[cfg(feature = "web")]
-    unsafe { ffi::UpdateMusicStream(music) };
+    unsafe {
+        ffi::UpdateMusicStream(music)
+    };
     #[cfg(feature = "native")]
-    unsafe { raylib::UpdateMusicStream(music) };
+    unsafe {
+        raylib::UpdateMusicStream(music)
+    };
 }
 
 pub fn get_texture_height(texture: Texture) -> i32 {
     #[cfg(feature = "web")]
-    unsafe { ffi::GetTextureHeight(texture) }
+    unsafe {
+        ffi::GetTextureHeight(texture)
+    }
     #[cfg(feature = "native")]
     texture.height
 }
 
 pub fn get_texture_width(texture: Texture) -> i32 {
     #[cfg(feature = "web")]
-    unsafe { ffi::GetTextureWidth(texture) }
+    unsafe {
+        ffi::GetTextureWidth(texture)
+    }
     #[cfg(feature = "native")]
     texture.width
 }
@@ -214,16 +226,24 @@ pub fn load_music_stream(file_path: &str) -> raylib::Music {
 
 pub fn init_audio_device() {
     #[cfg(feature = "web")]
-    unsafe { ffi::InitAudioDevice() }
+    unsafe {
+        ffi::InitAudioDevice()
+    }
     #[cfg(feature = "native")]
-    unsafe { raylib::InitAudioDevice() }
+    unsafe {
+        raylib::InitAudioDevice()
+    }
 }
 
 pub fn get_time() -> f64 {
     #[cfg(feature = "web")]
-    unsafe { ffi::GetTime() }
+    unsafe {
+        ffi::GetTime()
+    }
     #[cfg(feature = "native")]
-    unsafe { raylib::GetTime() }
+    unsafe {
+        raylib::GetTime()
+    }
 }
 
 pub fn load_image_colors(image: Image) -> *mut Color {
@@ -279,14 +299,7 @@ pub fn draw_texture_pro(
     };
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawTexturePro(
-            texture,
-            source_rec,
-            dest_rec,
-            origin,
-            rotation,
-            tint,
-        )
+        raylib::DrawTexturePro(texture, source_rec, dest_rec, origin, rotation, tint)
     };
 }
 
@@ -321,4 +334,32 @@ pub fn load_image(file_path: &str) -> Image {
     unsafe {
         return raylib::LoadImage(cstr!(file_path));
     };
+}
+
+pub fn is_music_loaded(music: Music) -> bool {
+    #[cfg(feature = "web")]
+    return unsafe { ffi::IsMusicLoaded(music) };
+    #[cfg(feature = "native")]
+    return true;
+}
+
+pub fn is_font_loaded(font: Font) -> bool {
+    #[cfg(feature = "web")]
+    return unsafe { ffi::IsFontLoaded(font) };
+    #[cfg(feature = "native")]
+    return true;
+}
+
+pub fn is_image_loaded(image: Image) -> bool {
+    #[cfg(feature = "web")]
+    return unsafe { ffi::IsImageLoaded(image) };
+    #[cfg(feature = "native")]
+    return true;
+}
+
+pub fn is_texture_loaded(texture: Texture) -> bool {
+    #[cfg(feature = "web")]
+    return unsafe { ffi::IsTextureLoaded(texture) };
+    #[cfg(feature = "native")]
+    return true;
 }
