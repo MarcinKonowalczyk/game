@@ -150,6 +150,12 @@ function cstr_by_ptr(mem_buffer, ptr) {
     return new TextDecoder().decode(bytes);
 }
 
+// pub struct Color {
+//     pub r: u8,
+//     pub g: u8,
+//     pub b: u8,
+//     pub a: u8,
+// }
 function getColorFromMemory(buffer, color_ptr) {
     var [r, g, b, a] = new Uint8Array(buffer, color_ptr, 4);
     r = r.toString(16).padStart(2, '0');
@@ -157,7 +163,25 @@ function getColorFromMemory(buffer, color_ptr) {
     b = b.toString(16).padStart(2, '0');
     a = a.toString(16).padStart(2, '0');
     return "#" + r + g + b + a;
-    
+}
+
+// pub struct Rectangle {
+//     pub x: f32,
+//     pub y: f32,
+//     pub width: f32,
+//     pub height: f32,
+// }
+function getRectangleFromMemory(buffer, rec_ptr) {
+    let mem = new Float32Array(buffer, rec_ptr, 4);
+    return { x: mem[0], y: mem[1], width: mem[2], height: mem[3] };
+}
+// pub struct Vector2 {
+//     pub x: f32,
+//     pub y: f32,
+// }
+function getVector2FromMemory(buffer, vec_ptr) {
+    let mem = new Float32Array(buffer, vec_ptr, 2);
+    return { x: mem[0], y: mem[1] };
 }
 
 function make_environment(...envs) {
@@ -519,13 +543,39 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
             return img.height;
         },
-        DrawTextureEx_: (id, x, y, rotation, scale, color_ptr) => {
+        // pub fn DrawTextureEx_(
+        //     texture: Texture,
+        //     positionX: i32,
+        //     positionY: i32,
+        //     rotation: f32,
+        //     scale: f32,
+        //     tint: *const Color,
+        // );
+        DrawTextureEx_: (id, x, y, rotation, scale, _color_ptr) => {
             const img = textures[id];
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(rotation);
             ctx.scale(scale, scale);
             ctx.drawImage(img, 0, 0);
+            ctx.restore();
+        },
+        // pub fn DrawTexturePro_(
+        //     texture: Texture,
+        //     sourceRec: raylib::Rectangle,
+        //     destRec: raylib::Rectangle,
+        //     origin: raylib::Vector2,
+        //     rotation: f32,
+        //     tint: *const Color,
+        // );
+        DrawTexturePro_: (id, sourceRec_ptr, destRec_ptr) => {
+            const img = textures[id];
+            const buffer = wf.memory.buffer;
+            const sourceRec = getRectangleFromMemory(buffer, sourceRec_ptr);
+            const destRec = getRectangleFromMemory(buffer, destRec_ptr);
+            ctx.save();
+            ctx.translate(destRec.x, destRec.y);
+            ctx.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 0, 0, destRec.width, destRec.height);
             ctx.restore();
         },
         UnloadTexture: () => { },
@@ -600,6 +650,31 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             return id;
         },
+        // pub fn LoadImageColors(image: Image) -> *mut Color;
+        // pub struct Color {
+        //     pub r: u8,
+        //     pub g: u8,
+        //     pub b: u8,
+        //     pub a: u8,
+        // }
+        LoadImageColors: (image_id) => {
+            // colors are an array of Color
+            const img = images[image_id];
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            const data = ctx.getImageData(0, 0, img.width, img.height).data;
+            console.log("Image data", data);
+            const colors = new Uint8Array(wf.memory.buffer, wf.malloc(data.length), data.length);
+            colors.set(data);
+            console.log("Image colors", colors);
+            return colors.byteOffset;
+        },
+        UnloadImageColors: (colors_ptr, size) => {
+            wf.free(colors_ptr, size);
+        },
         IsImageLoaded: (image_id) => {
             return images[image_id].complete;
         },
@@ -634,8 +709,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         // pub fn GetTime() -> f64;
         GetTime: () => {
             let t = performance.now();
-            console.log(t);
-            return t;
+            return t / 1000;
         }
     })
 }).then(w => {
@@ -669,7 +743,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             var d2 = data_view.getFloat32(4, true);
             var d3 = data_view.getFloat32(8, true);
             var d4 = data_view.getFloat32(12, true);
-            // console.log(i, d1, d2, d3, d4);
             C[i] = { d1, d2, d3, d4 };
         }
 
@@ -799,12 +872,12 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         } else {
             wf.game_load(state);
         }
-        // window.requestAnimationFrame(next);
+        window.requestAnimationFrame(next);
         // DEBUG: slow down the loop
-        setTimeout(() => {
-            window.requestAnimationFrame(next);
-        }, 5000
-        );
+        // setTimeout(() => {
+        //     window.requestAnimationFrame(next);
+        // }, 5000
+        // );
     };
     window.requestAnimationFrame((timestamp) => {
         prev = timestamp;

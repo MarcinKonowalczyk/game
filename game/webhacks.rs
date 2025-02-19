@@ -64,16 +64,13 @@ pub mod ffi {
         );
         pub fn GetTime() -> f64;
         pub fn LoadImageColors(image: Image) -> *mut Color;
-        pub fn UnloadImageColors(colors: *mut Color);
+        pub fn UnloadImageColors(colors: *mut Color, n: usize);
         pub fn GetImageWidth(image: Image) -> i32;
         pub fn GetImageHeight(image: Image) -> i32;
         pub fn DrawTexturePro_(
             texture: Texture,
-            sourceRec: raylib::Rectangle,
-            destRec: raylib::Rectangle,
-            origin: raylib::Vector2,
-            rotation: f32,
-            tint: *const Color,
+            sourceRec: *const raylib::Rectangle,
+            destRec: *const raylib::Rectangle,
         );
         pub fn UnloadImage(image: Image);
         pub fn LoadTextureFromImage(image: Image) -> Texture;
@@ -172,56 +169,60 @@ pub fn get_texture_width(texture: Texture) -> i32 {
     texture.width
 }
 
-#[cfg(feature = "web")]
 pub fn is_mouse_button_down(button: i32) -> bool {
-    unsafe { ffi::IsMouseButtonDown(button) }
-}
-
-#[cfg(feature = "native")]
-pub fn is_mouse_button_down(button: i32) -> bool {
-    unsafe { raylib::IsMouseButtonDown(button) }
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::IsMouseButtonDown(button)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::IsMouseButtonDown(button)
+    }
 }
 
 #[allow(dead_code)]
-#[cfg(feature = "web")]
-pub fn load_texture(file_path: &str) -> u32 {
-    unsafe { ffi::LoadTexture(cstr!(file_path)) }
+pub fn load_texture(file_path: &str) -> Texture {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::LoadTexture(cstr!(file_path))
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::LoadTexture(cstr!(file_path))
+    }
 }
 
-#[allow(dead_code)]
-#[cfg(feature = "native")]
-pub fn load_texture(file_path: &str) -> raylib::Texture {
-    unsafe { raylib::LoadTexture(cstr!(file_path)) }
+pub fn load_font(file_path: &str) -> Font {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::LoadFont(cstr!(file_path))
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::LoadFont(cstr!(file_path))
+    }
 }
 
-#[cfg(feature = "web")]
-pub fn load_font(file_path: &str) -> u32 {
-    unsafe { ffi::LoadFont(cstr!(file_path)) }
+pub fn play_music_stream(music: Music) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::PlayMusicStream(music)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::PlayMusicStream(music)
+    }
 }
 
-#[cfg(feature = "native")]
-pub fn load_font(file_path: &str) -> raylib::Font {
-    unsafe { raylib::LoadFont(cstr!(file_path)) }
-}
-
-#[cfg(feature = "web")]
-pub fn play_music_stream(music: u32) {
-    unsafe { ffi::PlayMusicStream(music) }
-}
-
-#[cfg(feature = "native")]
-pub fn play_music_stream(music: raylib::Music) {
-    unsafe { raylib::PlayMusicStream(music) }
-}
-
-#[cfg(feature = "web")]
-pub fn load_music_stream(file_path: &str) -> u32 {
-    unsafe { ffi::LoadMusicStream(cstr!(file_path)) }
-}
-
-#[cfg(feature = "native")]
-pub fn load_music_stream(file_path: &str) -> raylib::Music {
-    unsafe { raylib::LoadMusicStream(cstr!(file_path)) }
+pub fn load_music_stream(file_path: &str) -> Music {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::LoadMusicStream(cstr!(file_path))
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::LoadMusicStream(cstr!(file_path))
+    }
 }
 
 pub fn init_audio_device() {
@@ -253,10 +254,10 @@ pub fn load_image_colors(image: Image) -> *mut Color {
     return unsafe { raylib::LoadImageColors(image) };
 }
 
-pub fn unload_image_colors(colors: *mut Color) {
+pub fn unload_image_colors(colors: *mut Color, n: usize) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::UnloadImageColors(colors);
+        ffi::UnloadImageColors(colors, n);
     };
     #[cfg(feature = "native")]
     unsafe {
@@ -282,24 +283,24 @@ pub fn draw_texture_pro(
     texture: Texture,
     source_rec: raylib::Rectangle,
     dest_rec: raylib::Rectangle,
-    origin: raylib::Vector2,
-    rotation: f32,
-    tint: raylib::Color,
+    // origin: raylib::Vector2,
+    // rotation: f32,
+    // tint: raylib::Color,
 ) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTexturePro_(
-            texture,
-            source_rec,
-            dest_rec,
-            origin,
-            rotation,
-            addr_of!(tint),
-        )
+        ffi::DrawTexturePro_(texture, addr_of!(source_rec), addr_of!(dest_rec))
     };
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawTexturePro(texture, source_rec, dest_rec, origin, rotation, tint)
+        raylib::DrawTexturePro(
+            texture,
+            source_rec,
+            dest_rec,
+            raylib::Vector2::zero(),
+            0.0,
+            raylib::Color::WHITE,
+        );
     };
 }
 

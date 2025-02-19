@@ -101,7 +101,7 @@ fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
     
     let _colors = webhacks::load_image_colors(image);
     // defer! { unsafe { raylib::UnloadImageColors(_colors) } }
-    defer! { webhacks::unload_image_colors(_colors) }
+    defer! { webhacks::unload_image_colors(_colors, n * std::mem::size_of::<Color>()) }
 
     // Create a new rust vec from the raw pointer
     // let colors = unsafe { Vec::from_raw_parts(_colors, n, n) };

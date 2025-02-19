@@ -128,7 +128,7 @@ pub unsafe fn game_load(state: &mut State) {
     if any_not_loaded {
         webhacks::log("not all assets loaded".to_string());
     } else {
-        // state.all_loaded = true;
+        state.all_loaded = true;
         webhacks::log("all assets loaded".to_string());
     }
 
@@ -271,9 +271,6 @@ pub unsafe fn game_frame(state: &mut State) {
                 width: state.rect.width,
                 height: scaled_height,
             },
-            Vector2 { x: 0.0, y: 0.0 },
-            rotation,
-            tint,
         );
 
         let rect_pos = format! {
@@ -380,4 +377,18 @@ pub unsafe fn test() -> MyState {
         n: 2,
         c: arr.as_ptr(),
     }
+}
+
+#[no_mangle]
+pub fn malloc(size: usize) -> *mut u8 {
+    webhacks::log(format!("malloc: {}", size));
+    let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
+    unsafe { std::alloc::alloc(layout) }
+}
+
+#[no_mangle]
+pub fn free(ptr: *mut u8, size: usize) {
+    webhacks::log(format!("free: {}", size));
+    let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
+    unsafe { std::alloc::dealloc(ptr, layout) }
 }
