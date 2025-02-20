@@ -109,7 +109,7 @@ pub fn draw_texture_ex(
     unsafe { raylib::DrawTextureEx(texture, position, rotation, scale, tint) }
 }
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 pub fn log(msg: String) {
     #[cfg(feature = "web")]
     unsafe {
@@ -254,11 +254,7 @@ pub fn load_image_colors(image: Image) -> *mut Color {
     return unsafe { raylib::LoadImageColors(image) };
 }
 
-pub fn unload_image_colors(
-    colors: *mut Color,
-    #[allow(unused)]
-    n: usize,
-) {
+pub fn unload_image_colors(colors: *mut Color, #[allow(unused)] n: usize) {
     #[cfg(feature = "web")]
     unsafe {
         ffi::UnloadImageColors(colors, n);
@@ -308,6 +304,7 @@ pub fn draw_texture_pro(
     };
 }
 
+#[allow(dead_code)]
 pub fn unload_image(image: Image) {
     #[cfg(feature = "web")]
     unsafe {
@@ -341,30 +338,21 @@ pub fn load_image(file_path: &str) -> Image {
     };
 }
 
-pub fn is_music_loaded(
-    #[allow(unused)]
-    music: Music,
-) -> bool {
+pub fn is_music_loaded(#[allow(unused)] music: Music) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsMusicLoaded(music) };
     #[cfg(feature = "native")]
     return true;
 }
 
-pub fn is_font_loaded(
-    #[allow(unused)]
-    font: Font,
-) -> bool {
+pub fn is_font_loaded(#[allow(unused)] font: Font) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsFontLoaded(font) };
     #[cfg(feature = "native")]
     return true;
 }
 
-pub fn is_image_loaded(
-    #[allow(unused)]
-    image: Image,
-) -> bool {
+pub fn is_image_loaded(#[allow(unused)] image: Image) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsImageLoaded(image) };
     #[cfg(feature = "native")]

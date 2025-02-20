@@ -10,17 +10,29 @@ use game::*;
 
 #[cfg(feature = "native")]
 const fn get_game_path() -> &'static str {
-    #[cfg(target_os = "linux")] {
-        if cfg!(debug_assertions) { concat!("./target/debug/deps/libgame.so") }
-        else { concat!("./target/release/deps/libgame.so") }
+    #[cfg(target_os = "linux")]
+    {
+        if cfg!(debug_assertions) {
+            concat!("./target/debug/deps/libgame.so")
+        } else {
+            concat!("./target/release/deps/libgame.so")
+        }
     }
-    #[cfg(target_os = "windows")] {
-        if cfg!(debug_assertions) { ".\\target\\debug\\deps\\libgame.dll"}
-        else { ".\\target\\release\\deps\\libgame.dll" }
+    #[cfg(target_os = "windows")]
+    {
+        if cfg!(debug_assertions) {
+            ".\\target\\debug\\deps\\libgame.dll"
+        } else {
+            ".\\target\\release\\deps\\libgame.dll"
+        }
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))] {
-        if cfg!(debug_assertions) { "./target/debug/deps/libgame.dylib" }
-        else { "./target/release/deps/libgame.dylib" }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        if cfg!(debug_assertions) {
+            "./target/debug/deps/libgame.dylib"
+        } else {
+            "./target/release/deps/libgame.dylib"
+        }
     }
 }
 
@@ -29,33 +41,35 @@ const GAME_PATH: &str = get_game_path();
 
 #[inline]
 #[cfg(feature = "native")]
-unsafe fn load_lib(file_path: &str) -> Library {
-    Library::new(file_path).expect("failed to load the library")
+fn load_lib(file_path: &str) -> Library {
+    unsafe { Library::new(file_path).expect("failed to load the library") }
 }
 
 #[inline]
 #[cfg(feature = "native")]
-unsafe fn load_fn<'lib, T>(lib: &'lib Library, symbol: &str) -> Symbol::<'lib, T> {
-    lib.get(symbol.as_bytes()).map_err(|err| {
-        eprintln!("{err}"); err
-    }).unwrap()
+fn load_fn<'lib, T>(lib: &'lib Library, symbol: &str) -> Symbol<'lib, T> {
+    unsafe { lib.get(symbol.as_bytes()) }
+        .map_err(|err| {
+            eprintln!("{err}");
+            err
+        })
+        .unwrap()
 }
 
-unsafe fn start() {
+fn start() {
     #[cfg(feature = "native")]
     let mut lib = load_lib(GAME_PATH);
-    
-    #[cfg(feature = "native")]
-    let mut game_frame = load_fn::<Symbol::<GameFrame>>(&lib, "game_frame");
 
     #[cfg(feature = "native")]
-    let mut game_load = load_fn::<Symbol::<GameLoad>>(&lib, "game_load");
-    
+    let mut game_frame = load_fn::<Symbol<GameFrame>>(&lib, "game_frame");
+
+    #[cfg(feature = "native")]
+    let mut game_load = load_fn::<Symbol<GameLoad>>(&lib, "game_load");
+
     let mut state = game_init();
-    while !WindowShouldClose() {
-        
+    while !unsafe { WindowShouldClose() } {
         #[cfg(feature = "native")]
-        if IsKeyPressed(Key::R) {
+        if unsafe { IsKeyPressed(Key::R) } {
             drop(game_frame);
             drop(game_load);
             drop(lib);
@@ -66,13 +80,12 @@ unsafe fn start() {
 
         if state.all_loaded {
             game_frame(&mut state);
-        }
-        else {
+        } else {
             game_load(&mut state);
         }
     }
 }
 
 fn main() {
-    unsafe { start() }
+    start();
 }

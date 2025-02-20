@@ -1,16 +1,15 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
 use raylib_wasm::{self as raylib};
 
-mod webhacks;
-
 mod anim;
+mod defer;
+mod webhacks;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
 
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
-
 
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
 // are in the webhacks::State.
@@ -27,19 +26,19 @@ pub struct State {
     pub font: webhacks::Font,
     pub image: webhacks::Image,
     pub texture: webhacks::Texture,
-    pub anim_blobs_N: u32, // not usize to keep a predictable alignment
+    pub anim_blobs_n: u32, // not usize to keep a predictable alignment
     pub anim_blobs_arr: anim::Blobs, // as many as anim_frames
-    pub test_N: u32,
+    pub test_n: u32,
     pub test_arr: *const u32,
 }
 
 #[no_mangle]
-pub unsafe fn get_state_size() -> usize {
+pub fn get_state_size() -> usize {
     std::mem::size_of::<State>()
 }
 
 #[no_mangle]
-pub unsafe fn game_init() -> State {
+pub fn game_init() -> State {
     // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
     // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
     // See: https://github.com/raysan5/raylib/issues/3354
@@ -81,15 +80,17 @@ pub unsafe fn game_init() -> State {
         font: font,
         image: image,
         texture: webhacks::null_texture(),
-        anim_blobs_N: 0,
+        anim_blobs_n: 0,
         anim_blobs_arr: anim::null_blobs(),
-        test_N: 3,
+        test_n: 3,
         test_arr: [1, 2, 3].as_ptr(),
     }
 }
 
+pub type GameLoad = fn(state: &mut State);
+
 #[no_mangle]
-pub unsafe fn game_load(state: &mut State) {
+pub fn game_load(state: &mut State) {
     if state.all_loaded {
         return;
     }
@@ -110,7 +111,6 @@ pub unsafe fn game_load(state: &mut State) {
 
     // check if the image is loaded
     if !webhacks::is_image_loaded(state.image) {
-        // webhacks::log("image not loaded".to_string());
         any_not_loaded = true;
     } else {
         // image is loaded! let's load the texture
@@ -123,49 +123,56 @@ pub unsafe fn game_load(state: &mut State) {
         if !webhacks::is_texture_loaded(state.texture) {
             // webhacks::log("texture not loaded".to_string());
             any_not_loaded = true;
-        } else {
-            // texture is loaded! let's parse the animation
-            let (anim_blobs_arr, anim_blobs_N) = anim::parse_anim(state.image);
-            state.anim_blobs_arr = anim_blobs_arr;
-            state.anim_blobs_N = anim_blobs_N as u32;
         }
     }
 
-    if any_not_loaded {
-        // webhacks::log("not all assets loaded".to_string());
-    } else {
+    if !any_not_loaded {
         state.all_loaded = true;
-        // webhacks::log("all assets loaded".to_string());
+
+        // Once we've determined that init/load is done, we can unload some resources
+
+        let (anim_blobs_arr, anim_blobs_n) = anim::parse_anim(state.image);
+        state.anim_blobs_arr = anim_blobs_arr;
+        state.anim_blobs_n = anim_blobs_n as u32;
+
+        webhacks::unload_image(state.image); // we don't need the image anymore
     }
-
 }
-
 
 fn time_to_anim_frame(time: f64, frame_duration: f64, n_frames: u32) -> u32 {
     let frame = (time / frame_duration) as u32 % n_frames;
     frame
 }
 
-
-unsafe fn handle_keys(state: &mut State) {
-    if raylib::IsKeyDown(KEY::Space) {
-        state.speed = SPEED_BOOSTED
+fn handle_keys(state: &mut State) {
+    unsafe {
+        if raylib::IsKeyDown(KEY::Space) {
+            state.speed = SPEED_BOOSTED
+        } else {
+            state.speed = SPEED_DEFAULT
+        }
     }
-    if !raylib::IsKeyDown(KEY::Space) {
-        state.speed = SPEED_DEFAULT
+
+    let dt = unsafe { raylib::GetFrameTime() };
+
+    let (w, s, a, d);
+    unsafe {
+        w = raylib::IsKeyDown(KEY::W);
+        s = raylib::IsKeyDown(KEY::S);
+        a = raylib::IsKeyDown(KEY::A);
+        d = raylib::IsKeyDown(KEY::D);
     }
 
-    let dt = raylib::GetFrameTime();
-    if raylib::IsKeyDown(KEY::W) {
+    if w {
         state.rect.y -= dt * state.speed
     }
-    if raylib::IsKeyDown(KEY::A) {
-        state.rect.x -= dt * state.speed
-    }
-    if raylib::IsKeyDown(KEY::S) {
+    if s {
         state.rect.y += dt * state.speed
     }
-    if raylib::IsKeyDown(KEY::D) {
+    if a {
+        state.rect.x -= dt * state.speed
+    }
+    if d {
         state.rect.x += dt * state.speed
     }
 
@@ -183,8 +190,8 @@ unsafe fn handle_keys(state: &mut State) {
     }
 }
 
-unsafe fn handle_mouse(state: &mut State) {
-    let mut mouse_pos = raylib::GetMousePosition();
+fn handle_mouse(state: &mut State) {
+    let mut mouse_pos = unsafe { raylib::GetMousePosition() };
     let is_outside = mouse_pos.x < 0.0
         || mouse_pos.y < 0.0
         || mouse_pos.x > WINDOW_WIDTH as f32
@@ -196,20 +203,19 @@ unsafe fn handle_mouse(state: &mut State) {
     state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32;
 }
 
-pub type GameFrame = unsafe fn(state: &mut State);
-pub type GameLoad = unsafe fn(state: &mut State);
+pub type GameFrame = fn(state: &mut State);
 
 #[no_mangle]
-pub unsafe fn game_frame(state: &mut State) {
-
+pub fn game_frame(state: &mut State) {
     let t = webhacks::get_time();
 
     handle_keys(state);
     handle_mouse(state);
 
-    raylib::BeginDrawing();
+    unsafe { raylib::BeginDrawing() };
+
     {
-        raylib::ClearBackground(DARKGREEN);
+        unsafe { raylib::ClearBackground(DARKGREEN) };
         webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
         let mut position = Vector2 {
@@ -232,13 +238,13 @@ pub unsafe fn game_frame(state: &mut State) {
         // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
         let anim_blobs = &state.anim_blobs_arr;
-        let i= time_to_anim_frame(t, 0.1, state.anim_blobs_N as u32);
-        
+        let i = time_to_anim_frame(t, 0.1, state.anim_blobs_n as u32);
+
         #[cfg(feature = "native")]
         let blob = anim_blobs[i as usize];
         #[cfg(feature = "web")]
-        let blob = unsafe { * anim_blobs.wrapping_add(i as usize) };
-        
+        let blob = unsafe { *anim_blobs.wrapping_add(i as usize) };
+
         let source = blob.to_rect();
 
         // raylib::DrawTexturePro(
@@ -269,21 +275,22 @@ pub unsafe fn game_frame(state: &mut State) {
 
         let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
 
-        raylib::DrawCircle(
-            state.mouse_pos.x as i32,
-            state.mouse_pos.y as i32,
-            10.0,
-            color,
-        );
+        unsafe {
+            raylib::DrawCircle(
+                state.mouse_pos.x as i32,
+                state.mouse_pos.y as i32,
+                10.0,
+                color,
+            )
+        };
     }
-    raylib::EndDrawing();
+    unsafe { raylib::EndDrawing() };
 
     // Update the music stream
     webhacks::update_music_stream(state.music);
-    
+
     // Update the frame count
     state.frame_count += 1;
-
 }
 
 #[no_mangle]

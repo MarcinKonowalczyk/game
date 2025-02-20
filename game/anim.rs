@@ -1,22 +1,6 @@
-use raylib_wasm::{self as raylib, Color};
+use crate::defer;
 use crate::webhacks;
-
-////////////////////////
-struct ScopeCall<F: FnMut()> {
-    c: F
-}
-
-impl<F: FnMut()> Drop for ScopeCall<F> {
-    fn drop(&mut self) {
-        (self.c)();
-    }
-}
-    
-macro_rules! defer {
-    ($e:expr) => (
-        let _scope_call = ScopeCall { c: || -> () { $e; } };
-    )
-}
+use raylib_wasm::{self as raylib, Color};
 
 ////////////////////////
 
@@ -35,7 +19,6 @@ pub fn index_blobs(blobs: &Blobs, index: usize) -> Blob {
     return unsafe { *blobs.wrapping_add(index) };
 }
 
-// std::ptr::null()
 pub fn null_blobs() -> Blobs {
     #[cfg(feature = "native")]
     return Vec::new();
@@ -45,7 +28,6 @@ pub fn null_blobs() -> Blobs {
 }
 
 pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
-
     let vec_blobs = find_blobs(image);
     let num = vec_blobs.len();
 
@@ -60,12 +42,16 @@ pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
 
 ////////////////////////
 
-const MAGENTA: Color = Color { r: 255, g: 0, b: 255, a: 255 };
+const MAGENTA: Color = Color {
+    r: 255,
+    g: 0,
+    b: 255,
+    a: 255,
+};
 
 fn is_magenta(color: Color) -> bool {
     color.r == MAGENTA.r && color.g == MAGENTA.g && color.b == MAGENTA.b
 }
-
 
 #[repr(C, align(4))]
 #[derive(Debug, Copy, Clone)]
@@ -90,8 +76,8 @@ impl Blob {
             x: self.x_min as f32,
             y: self.y_min as f32,
             width: self.width() as f32,
-            height: self.height() as f32
-        }
+            height: self.height() as f32,
+        };
     }
 }
 
@@ -100,23 +86,17 @@ struct FindBlobsData {
     width: usize,
     height: usize,
     visited: Vec<bool>,
-    stack: Vec<(usize, usize)>
+    stack: Vec<(usize, usize)>,
 }
 
 fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
     let width = webhacks::get_image_width(image) as usize;
     let height = webhacks::get_image_height(image) as usize;
-    
-    let n = width * height;
-    
-    let _colors = webhacks::load_image_colors(image);
-    // defer! { unsafe { raylib::UnloadImageColors(_colors) } }
-    defer! { webhacks::unload_image_colors(_colors, n * std::mem::size_of::<Color>()) }
 
-    // Create a new rust vec from the raw pointer
-    // let colors = unsafe { Vec::from_raw_parts(_colors, n, n) };
-    // let colors = mem::ManuallyDrop::new(colors);
-    // return colors;
+    let n = width * height;
+
+    let _colors = webhacks::load_image_colors(image);
+    defer! { webhacks::unload_image_colors(_colors, n * std::mem::size_of::<Color>()) }
 
     // Copy the colors into a Rust Vec
     let mut colors = Vec::with_capacity(n);
@@ -132,7 +112,13 @@ impl FindBlobsData {
         let (colors, width, height) = image_to_colors(image);
         let visited = vec![false; colors.len()];
         let stack = Vec::new();
-        return FindBlobsData { colors, width, height, visited, stack };
+        return FindBlobsData {
+            colors,
+            width,
+            height,
+            visited,
+            stack,
+        };
     }
 }
 
@@ -216,7 +202,12 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
             let x_u32: u32 = x.try_into().unwrap();
             let y_u32: u32 = y.try_into().unwrap();
 
-            let mut blob = Blob { x_min: x_u32, y_min: y_u32, x_max: x_u32, y_max: y_u32 };
+            let mut blob = Blob {
+                x_min: x_u32,
+                y_min: y_u32,
+                x_max: x_u32,
+                y_max: y_u32,
+            };
 
             // Flood fill the blob
             dat.clear_stack();
@@ -229,10 +220,10 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
                 if color.is_none() {
                     continue;
                 }
-                
+
                 let x_u32: u32 = x.try_into().unwrap();
                 let y_u32: u32 = y.try_into().unwrap();
-                
+
                 blob.x_min = blob.x_min.min(x_u32);
                 blob.y_min = blob.y_min.min(y_u32);
                 blob.x_max = blob.x_max.max(x_u32);
@@ -240,15 +231,17 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
 
                 dat.append_neighbours(x, y);
             }
-            
+
             blobs.push(blob);
         }
     }
 
-    // println!("Found {} blobs.", i);
-    for (i, blob) in blobs.iter().enumerate() {
-        println!("Blob {} at ({}, {}) to ({}, {})", i, blob.x_min, blob.y_min, blob.x_max, blob.y_max);
-    }
+    // for (i, blob) in blobs.iter().enumerate() {
+    //     println!(
+    //         "Blob {} at ({}, {}) to ({}, {})",
+    //         i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
+    //     );
+    // }
 
     // Sort the blobs by first y, then x
     blobs.sort_by(|a, b| {
@@ -259,5 +252,4 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     });
 
     return blobs;
-
 }
