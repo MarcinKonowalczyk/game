@@ -1,3 +1,7 @@
 {
-    "rust-analyzer.cargo.features": ["native"],
+    // "rust-analyzer.cargo.features": ["native"],
+    "rust-analyzer.cargo.features": [
+        "native"
+        // "web"
+    ],
 }

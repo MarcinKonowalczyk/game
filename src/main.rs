@@ -44,19 +44,32 @@ unsafe fn load_fn<'lib, T>(lib: &'lib Library, symbol: &str) -> Symbol::<'lib, T
 unsafe fn start() {
     #[cfg(feature = "native")]
     let mut lib = load_lib(GAME_PATH);
+    
     #[cfg(feature = "native")]
     let mut game_frame = load_fn::<Symbol::<GameFrame>>(&lib, "game_frame");
 
+    #[cfg(feature = "native")]
+    let mut game_load = load_fn::<Symbol::<GameLoad>>(&lib, "game_load");
+    
     let mut state = game_init();
     while !WindowShouldClose() {
+        
         #[cfg(feature = "native")]
         if IsKeyPressed(Key::R) {
             drop(game_frame);
+            drop(game_load);
             drop(lib);
             lib = load_lib(GAME_PATH);
             game_frame = load_fn(&lib, "game_frame");
+            game_load = load_fn(&lib, "game_load");
         }
-        game_frame(&mut state);
+
+        if state.all_loaded {
+            game_frame(&mut state);
+        }
+        else {
+            game_load(&mut state);
+        }
     }
 }
 

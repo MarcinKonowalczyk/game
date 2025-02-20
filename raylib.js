@@ -150,6 +150,12 @@ function cstr_by_ptr(mem_buffer, ptr) {
     return new TextDecoder().decode(bytes);
 }
 
+// pub struct Color {
+//     pub r: u8,
+//     pub g: u8,
+//     pub b: u8,
+//     pub a: u8,
+// }
 function getColorFromMemory(buffer, color_ptr) {
     var [r, g, b, a] = new Uint8Array(buffer, color_ptr, 4);
     r = r.toString(16).padStart(2, '0');
@@ -157,7 +163,41 @@ function getColorFromMemory(buffer, color_ptr) {
     b = b.toString(16).padStart(2, '0');
     a = a.toString(16).padStart(2, '0');
     return "#" + r + g + b + a;
-    
+}
+
+// pub struct Rectangle {
+//     pub x: f32,
+//     pub y: f32,
+//     pub width: f32,
+//     pub height: f32,
+// }
+function getRectangleFromMemory(buffer, rec_ptr) {
+    let mem = new Float32Array(buffer, rec_ptr, 4);
+    return { x: mem[0], y: mem[1], width: mem[2], height: mem[3] };
+}
+// pub struct Vector2 {
+//     pub x: f32,
+//     pub y: f32,
+// }
+function getVector2FromMemory(buffer, vec_ptr) {
+    let mem = new Float32Array(buffer, vec_ptr, 2);
+    return { x: mem[0], y: mem[1] };
+}
+
+let ALL_IDS = new Set();
+
+function gen_asset_id() {
+    let _gen_id = () => Math.floor(Math.random() * 1000000);
+    var id = _gen_id();
+    while (ALL_IDS.has(id) || id === 0) {
+        id = _gen_id();
+    }
+    ALL_IDS.add(id);
+    return id;
+}
+
+function drop_asset_id(id) {
+    ALL_IDS.delete(id);
 }
 
 function make_environment(...envs) {
@@ -294,7 +334,7 @@ function tryToPlayAudio() {
 }
 
 let images = new Map();
-
+let textures = new Map();
 let wasm = undefined;
 let dt = undefined;
 let wf = undefined;
@@ -358,21 +398,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
             }
         },
-        LoadFont: (file_path_ptr) => {
+        LoadFont: (file_path_ptr) => {            
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
 
+            var id = gen_asset_id();
+
+            console.log("Loading font", {id, file_path});
+
             // split at the last slash and at the last dot
-            let ext = file_path.split('.').pop();
+            // let ext = file_path.split('.').pop();
             let font_name = file_path.split('/').pop().split('.').slice(0, -1).join('.');
 
             if (font_map.has(font_name)) {
                 // font already loaded
                 return font_map.get(font_name);
             }
-
-            // generate a unique id for the font
-            var font_id = Math.floor(Math.random() * 1000000);
             
             // fetch the font file
             fetch(file_path).then((response) => {
@@ -393,14 +434,17 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                     }).catch(reject);
                 });
             }).then((font) => {
-                font_map.set(font_id, font_name);
-                return font_id;
+                font_map.set(id, font_name);
+                return id;
             }).catch((err) => {
                 console.log(err);
                 return -1;
             });
 
-            return font_id;
+            return id;
+        },
+        IsFontLoaded: (font) => {
+            return font_map.has(font);
         },
         DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing,  color_ptr) => {
             const buffer = wf.memory.buffer;
@@ -469,52 +513,53 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.fill();
         },
         LoadTexture: (file_path_ptr) => {
-            console.log("Loading texture");
-            // console.log(result_ptr, file_path_ptr);
+            var id = gen_asset_id();
+            console.log("Loading texture", {id, file_path});
+
             const buffer = wf.memory.buffer;
-            console.log("1");
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
-            console.log("2");
-
-            // let result = new Uint32Array(buffer, result_ptr, 5)
+        
             let img = new Image();
-            var id = Math.floor(Math.random() * 1000000);
-
-            console.log(id);
-
-            images[id] = img;
-
-            // Some info we already know
-            // result[0] = id;
-            // result[3] = 1; // mipmaps
-            // result[4] = 7; // format PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-
-            console.log("Loading image", id, file_path);
-            // img.onload = () => {
-            //     images[id] = img;
-            // };
+            textures[id] = img;
             img.src = file_path;
-            
-            // console.log(result);
-            
+
             return id;
         },
+        UnloadTexture: () => {
+            drop_asset_id(id);
+            delete textures[id];
+        },
+        IsTextureLoaded: (id) => {
+            const tex = textures[id];
+            if (tex === undefined) {
+                return false;
+            }
+            return textures[id].complete;
+        },
         GetTextureWidth: (id) => {
-            const img = images[id];
+            const img = textures[id];
             if (img === undefined) {
                 return 0;
             }
             return img.width;
         },
         GetTextureHeight: (id) => {
-            const img = images[id];
+            const img = textures[id];
             if (img === undefined) {
                 return 0;
             }
             return img.height;
         },
-        DrawTextureEx_: (id, x, y, rotation, scale, color_ptr) => {
-            const img = images[id];
+        // pub fn DrawTextureEx_(
+        //     texture: Texture,
+        //     positionX: i32,
+        //     positionY: i32,
+        //     rotation: f32,
+        //     scale: f32,
+        //     tint: *const Color,
+        // );
+        DrawTextureEx_: (id, x, y, rotation, scale, _color_ptr) => {
+            const img = textures[id];
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(rotation);
@@ -522,7 +567,24 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.drawImage(img, 0, 0);
             ctx.restore();
         },
-        UnloadTexture: () => { },
+        // pub fn DrawTexturePro_(
+        //     texture: Texture,
+        //     sourceRec: raylib::Rectangle,
+        //     destRec: raylib::Rectangle,
+        //     origin: raylib::Vector2,
+        //     rotation: f32,
+        //     tint: *const Color,
+        // );
+        DrawTexturePro_: (id, sourceRec_ptr, destRec_ptr) => {
+            const img = textures[id];
+            const buffer = wf.memory.buffer;
+            const sourceRec = getRectangleFromMemory(buffer, sourceRec_ptr);
+            const destRec = getRectangleFromMemory(buffer, destRec_ptr);
+            ctx.save();
+            ctx.translate(destRec.x, destRec.y);
+            ctx.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 0, 0, destRec.width, destRec.height);
+            ctx.restore();
+        },
         GetScreenWidth: () => ctx.canvas.width,
         GetScreenHeight: () => ctx.canvas.height,
         GetFrameTime: () => {
@@ -554,17 +616,26 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         LoadMusicStream: (file_path_ptr) => {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
+            
+            let id = gen_asset_id();
+            console.log("Loading music stream", {id, file_path});
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
                 console.log(response);
                 initAudioContext(response.url);
-                let audio = new Audio();
-                return -1;
             }).catch((err) => {
                 console.log(err);
-                return -1;
             });
+
+            return id;
+        },
+        UnloadMusicStream: (id) => {
+            drop_asset_id(id);
+            delete audio[id];
+        },
+        IsMusicLoaded: () => {
+            return audio.loop !== undefined;
         },
         PlayMusicStream: (_audio_id) => {
             tryToPlayAudio();
@@ -572,16 +643,220 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         UpdateMusicStream: (_audio_id) => {
             tryToPlayAudio();
         },
+        // pub fn LoadImage(file_path: *const i8) -> u32;
+        LoadImage: (file_path_ptr) => {
+            const buffer = wf.memory.buffer;
+            const file_path = cstr_by_ptr(buffer, file_path_ptr);
+
+            var id = gen_asset_id();
+            console.log("Loading image", {id, file_path});
+
+            let img = new Image();
+
+            images[id] = img;
+            img.src = file_path;
+
+            // NOTE: the image is not loaded yet.
+            // img.onload = () => console.log("Image loaded", id);
+
+            return id;
+        },
+        UnloadTexture: (id) => {
+            drop_asset_id(id);
+            delete textures[id];
+        },
+        // pub fn LoadImageColors(image: Image) -> *mut Color;
+        // pub struct Color {
+        //     pub r: u8,
+        //     pub g: u8,
+        //     pub b: u8,
+        //     pub a: u8,
+        // }
+        LoadImageColors: (id) => {
+            // colors are an array of Color
+            const img = images[id];
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            const data = ctx.getImageData(0, 0, img.width, img.height).data;
+            const colors = new Uint8Array(wf.memory.buffer, wf.from_js_malloc(data.length), data.length);
+            colors.set(data);
+            return colors.byteOffset;
+        },
+        UnloadImageColors: (colors_ptr, size) => {
+            wf.from_js_free(colors_ptr, size);
+        },
+        IsImageLoaded: (id) => {
+            return images[id].complete;
+        },
+        // pub fn LoadTextureFromImage(image: u32) -> u32;
+        LoadTextureFromImage: (id) => {
+            var tex_id = gen_asset_id();
+            console.log("Loading texture from image", {"image_id": id, "texture_id": tex_id});
+            const img = images[id];
+            textures[tex_id] = img;
+            return tex_id;
+        },
+        // pub fn GetImageWidth(image: u32) -> i32;
+        GetImageWidth: (id) => {
+            const img = images[id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.width;
+        },
+        // pub fn GetImageHeight(image: u32) -> i32;
+        GetImageHeight: (image_id) => {
+            const img = images[image_id];
+            if (img === undefined) {
+                return 0;
+            }
+            return img.height;
+        },
+        // pub fn UnloadImage(image: Image) -> ();
+        UnloadImage: (image_id) => {
+            delete images[image_id];
+        },
+        // pub fn GetTime() -> f64;
+        GetTime: () => {
+            let t = performance.now();
+            return t / 1000;
+        }
     })
 }).then(w => {
     wasm = w;
     wf = w.instance.exports;
-    console.log(w);
+    // console.log(w);
 
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
 
     let state = wf.game_init();
+
+    function read_loaded_flag(ptr) {
+        const buffer = wasm.instance.exports.memory.buffer;
+        var data_view = new DataView(buffer, ptr, 4);
+        return data_view.getUint32(0, true) == 1;
+    }
+
+    function parse_state(ptr, n_bytes) {
+        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{image}u{texture}[uuuu]*u*";
+
+        const buffer = wasm.instance.exports.memory.buffer;
+
+        function to_struct(buffer, ptr, schema) {
+
+            // state buffer is 4-byte aligned.
+            var data_view = new DataView(buffer, ptr, n_bytes);
+
+            let tokens = [];
+            for (let token of scanner(schema)) {
+                tokens.push(token);
+            }
+
+            function _to_struct(data_view, tokens, offset) {
+
+                if (offset === undefined) {
+                    offset = 0;
+                }
+
+                var out = [];
+                let i = 0;
+                for (let token of tokens) {
+
+                    if (token.type === "error") {
+                        console.error("Error parsing schema", token);
+                        return;
+                    } 
+
+                    if (token.is_array) {
+                        let len = data_view.getUint32(i + offset, true); i += 4;
+                        let ptr = data_view.getUint32(i + offset, true); i += 4;
+
+                        let _len = len * 4;
+
+                        if (token.type === "struct") {
+                            _len *= token.value.length;
+                        }
+
+                        if (len === 0) {
+                            // empty array or null pointer
+                            out.push([]);
+                            continue;
+                        }
+
+                        if (ptr === 0) {
+                            console.error("Null pointer in array", token);
+                            out.push([]);
+                            continue;
+                        }
+
+                        let _data_view = new DataView(buffer, ptr, _len);
+
+                        let _fun = undefined;
+
+                        if (token.type === "struct") {
+                            _fun = (dv, j) => _to_struct(_data_view, token.value, j * token.value.length * 4)[0];
+                        } else if (token.type === "uint32") {
+                            _fun = (dv, j) => _data_view.getUint32(j * 4, true);
+                        } else if (token.type === "float32") {
+                            _fun = (dv, j) => _data_view.getFloat32(j * 4, true);
+                        } else if (token.type === "bool") {
+                            _fun = (dv, j) => _data_view.getUint32(j * 4, true) === 1;
+                        } else {
+                            console.error("Unknown token type", token);
+                        }
+                        
+                        let arr = [];
+                        for (let j = 0; j < len; j++) {
+                            arr.push(_fun(_data_view, j));
+                        }
+                        out.push(arr);
+                    } else {
+                        // parse single token
+                        if (token.type === "uint32") {
+                            out.push(data_view.getUint32(i + offset, true));
+                            i += 4;
+                        } else if (token.type === "float32") {
+                            out.push(data_view.getFloat32(i + offset, true));
+                            i += 4;
+                        } else if (token.type === "bool") {
+                            // We are 4-byte aligned, so a bool takes 4 bytes
+                            out.push(data_view.getUint32(i + offset) === 1);
+                            i += 4;
+                        } else if (token.type === "struct") {
+                            // recursively parse the struct
+                            let s = _to_struct(data_view, token.value, i);
+                            out.push(s[0]);
+                            i += s[1];
+                        } else {
+                            console.error("Unknown token type", token);
+                        }
+                    }
+                }
+
+                return [ out, i ];
+    
+            }
+            
+            let out = {};
+            let i = 0;
+            [out, i] = _to_struct(data_view, tokens);
+
+            return out;
+        }
+        
+        return to_struct(buffer, ptr, schema);
+
+    }
+
+    let n_state_size = wf.get_state_size();
+
+    // console.log("State size", n_state_size);
+    // console.log("State", parse_state(state, n_state_size));
+
     const next = (timestamp) => {
         if (quit) {
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -590,8 +865,21 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         }
         dt = (timestamp - prev) / 1000.0;
         prev = timestamp;
-        wf.game_frame(state);
+        
+        if (read_loaded_flag(state)) {
+            wf.game_frame(state);
+        } else {
+            wf.game_load(state);
+            if (read_loaded_flag(state)) {
+                console.log("Game loaded!! :D");
+                console.log(parse_state(state, n_state_size));
+            }
+        }
+        // log last element of state
+        // console.log(parse_state(state, n_state_size));
         window.requestAnimationFrame(next);
+        // DEBUG: slow down the loop
+        // setTimeout(() => {window.requestAnimationFrame(next);}, 1000);
     };
     window.requestAnimationFrame((timestamp) => {
         prev = timestamp;
@@ -777,3 +1065,60 @@ function loopify(uri, cb) {
 loopify.version = "0.2";
 
 ///////////////////////////////////////////
+
+
+// let schema = "u[ffff]f*{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
+
+function parse_until(schema, i, end) {
+    let label = "";
+    i++;
+    while (schema[i] !== end) {
+        label += schema[i];
+        i++;
+    }
+    return [ label, i ];
+}
+
+function* scanner(schema) {
+    let i = 0;
+    while (i < schema.length) {
+        var out;
+        let char = schema[i];
+        if (char === "u") {
+            out = { type: "uint32", value: char }
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "f") {
+            out = { type: "float32", value: char };
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "b") {
+            out = { type: "bool", value: char };
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "[") {
+            out = { type: "struct"};
+            var content = "";
+            [ content, i ] = parse_until(schema, i, "]");
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+
+            // recursively parse the content
+            out.value = [];
+            for (let token of scanner(content)) {
+                out.value.push(token);
+            }
+            yield out;
+        } else if (char === " " || char === "," || char === "\n") {
+            // silently skip whitespace and commas and newlines
+            i++;
+        } else {
+            yield { type: "error", value: char };
+        }
+
+        i++;
+    }
+}
