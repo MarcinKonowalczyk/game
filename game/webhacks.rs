@@ -254,7 +254,11 @@ pub fn load_image_colors(image: Image) -> *mut Color {
     return unsafe { raylib::LoadImageColors(image) };
 }
 
-pub fn unload_image_colors(colors: *mut Color, n: usize) {
+pub fn unload_image_colors(
+    colors: *mut Color,
+    #[allow(unused)]
+    n: usize,
+) {
     #[cfg(feature = "web")]
     unsafe {
         ffi::UnloadImageColors(colors, n);
@@ -297,9 +301,9 @@ pub fn draw_texture_pro(
             texture,
             source_rec,
             dest_rec,
-            raylib::Vector2::zero(),
+            raylib::Vector2 { x: 0.0, y: 0.0 },
             0.0,
-            raylib::Color::WHITE,
+            raylib::RAYWHITE,
         );
     };
 }
@@ -337,30 +341,53 @@ pub fn load_image(file_path: &str) -> Image {
     };
 }
 
-pub fn is_music_loaded(music: Music) -> bool {
+pub fn is_music_loaded(
+    #[allow(unused)]
+    music: Music,
+) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsMusicLoaded(music) };
     #[cfg(feature = "native")]
     return true;
 }
 
-pub fn is_font_loaded(font: Font) -> bool {
+pub fn is_font_loaded(
+    #[allow(unused)]
+    font: Font,
+) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsFontLoaded(font) };
     #[cfg(feature = "native")]
     return true;
 }
 
-pub fn is_image_loaded(image: Image) -> bool {
+pub fn is_image_loaded(
+    #[allow(unused)]
+    image: Image,
+) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsImageLoaded(image) };
     #[cfg(feature = "native")]
     return true;
 }
 
+#[allow(unused)]
 pub fn is_texture_loaded(texture: Texture) -> bool {
     #[cfg(feature = "web")]
     return unsafe { ffi::IsTextureLoaded(texture) };
     #[cfg(feature = "native")]
-    return true;
+    return texture.id != 0;
+}
+
+pub fn null_texture() -> Texture {
+    #[cfg(feature = "web")]
+    return 0;
+    #[cfg(feature = "native")]
+    return raylib::Texture {
+        id: 0,
+        width: 0,
+        height: 0,
+        mipmaps: 0,
+        format: 0,
+    };
 }

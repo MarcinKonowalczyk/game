@@ -76,9 +76,9 @@ pub unsafe fn game_init() -> State {
         music: music,
         font: font,
         image: image,
-        texture: 0,
+        texture: webhacks::null_texture(),
         anim_frames: 0,
-        anim_blobs: std::ptr::null(),
+        anim_blobs: anim::null_blobs(),
     }
 }
 
@@ -110,7 +110,7 @@ pub unsafe fn game_load(state: &mut State) {
         // image is loaded! let's load the texture
         // state.texture = webhacks::load_texture_from_image(state.image);
 
-        if state.texture == 0 {
+        if !webhacks::is_texture_loaded(state.texture) {
             state.texture = webhacks::load_texture_from_image(state.image);
         }
 
@@ -218,6 +218,7 @@ unsafe fn handle_mouse(state: &mut State) {
 }
 
 pub type GameFrame = unsafe fn(state: &mut State);
+pub type GameLoad = unsafe fn(state: &mut State);
 
 #[no_mangle]
 pub unsafe fn game_frame(state: &mut State) {
@@ -236,7 +237,7 @@ pub unsafe fn game_frame(state: &mut State) {
             x: state.rect.x,
             y: state.rect.y,
         };
-        let rotation = 0.0;
+        // let rotation = 0.0;
 
         // figure out how to scale the texture to the size of the rect
         let width = webhacks::get_texture_width(state.texture);
@@ -248,7 +249,7 @@ pub unsafe fn game_frame(state: &mut State) {
         let scaled_height = height as f32 * scale;
         position.y += state.rect.height - scaled_height;
 
-        let tint = RAYWHITE;
+        // let tint = RAYWHITE;
         // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
         let anim_blobs = &state.anim_blobs;
@@ -379,15 +380,23 @@ pub unsafe fn test() -> MyState {
     }
 }
 
+
+// CAREFUL!
+// 1) we need these only from we web version
+// 2) if these are called 'malloc' and 'free' they will clash with the ones from stdlib
+// 3) if we have a fmt in malloc, we overflow the stack ue to inf recursion
+
+#[cfg(feature = "web")]
 #[no_mangle]
-pub fn malloc(size: usize) -> *mut u8 {
+pub fn from_js_malloc(size: usize) -> *mut u8 {
     webhacks::log(format!("malloc: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::alloc(layout) }
 }
 
+#[cfg(feature = "web")]
 #[no_mangle]
-pub fn free(ptr: *mut u8, size: usize) {
+pub fn from_js_free(ptr: *mut u8, size: usize) {
     webhacks::log(format!("free: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }

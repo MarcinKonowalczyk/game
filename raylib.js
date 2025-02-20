@@ -667,13 +667,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.drawImage(img, 0, 0);
             const data = ctx.getImageData(0, 0, img.width, img.height).data;
             console.log("Image data", data);
-            const colors = new Uint8Array(wf.memory.buffer, wf.malloc(data.length), data.length);
+            const colors = new Uint8Array(wf.memory.buffer, wf.from_js_malloc(data.length), data.length);
             colors.set(data);
             console.log("Image colors", colors);
             return colors.byteOffset;
         },
         UnloadImageColors: (colors_ptr, size) => {
-            wf.free(colors_ptr, size);
+            wf.from_js_free(colors_ptr, size);
         },
         IsImageLoaded: (image_id) => {
             return images[image_id].complete;

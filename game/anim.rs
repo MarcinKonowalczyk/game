@@ -26,12 +26,22 @@ pub type Blobs = Vec<Blob>;
 #[cfg(feature = "web")]
 pub type Blobs = *const Blob;
 
+#[allow(unused)]
 pub fn index_blobs(blobs: &Blobs, index: usize) -> Blob {
     #[cfg(feature = "native")]
     return blobs[index].clone();
 
     #[cfg(feature = "web")]
     return unsafe { *blobs.wrapping_add(index) };
+}
+
+// std::ptr::null()
+pub fn null_blobs() -> Blobs {
+    #[cfg(feature = "native")]
+    return Vec::new();
+
+    #[cfg(feature = "web")]
+    return std::ptr::null();
 }
 
 pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
@@ -187,7 +197,7 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     let mut blobs = Vec::new();
     let width = webhacks::get_image_width(image);
     let height = webhacks::get_image_height(image);
-    webhacks::log(format!("Image size: {} x {}", width, height));
+    // webhacks::log(format!("Image size: {} x {}", width, height));
     if width <= 2 || height <= 2 {
         // Texture too small. Definitely not a sprite sheet. Return empty list.
         return blobs;
