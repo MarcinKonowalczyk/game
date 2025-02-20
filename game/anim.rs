@@ -1,26 +1,6 @@
+use crate::defer;
 use crate::webhacks;
 use raylib_wasm::{self as raylib, Color};
-
-////////////////////////
-struct ScopeCall<F: FnMut()> {
-    c: F,
-}
-
-impl<F: FnMut()> Drop for ScopeCall<F> {
-    fn drop(&mut self) {
-        (self.c)();
-    }
-}
-
-macro_rules! defer {
-    ($e:expr) => {
-        let _scope_call = ScopeCall {
-            c: || -> () {
-                $e;
-            },
-        };
-    };
-}
 
 ////////////////////////
 
@@ -39,7 +19,6 @@ pub fn index_blobs(blobs: &Blobs, index: usize) -> Blob {
     return unsafe { *blobs.wrapping_add(index) };
 }
 
-// std::ptr::null()
 pub fn null_blobs() -> Blobs {
     #[cfg(feature = "native")]
     return Vec::new();
@@ -117,13 +96,7 @@ fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
     let n = width * height;
 
     let _colors = webhacks::load_image_colors(image);
-    // defer! { unsafe { raylib::UnloadImageColors(_colors) } }
     defer! { webhacks::unload_image_colors(_colors, n * std::mem::size_of::<Color>()) }
-
-    // Create a new rust vec from the raw pointer
-    // let colors = unsafe { Vec::from_raw_parts(_colors, n, n) };
-    // let colors = mem::ManuallyDrop::new(colors);
-    // return colors;
 
     // Copy the colors into a Rust Vec
     let mut colors = Vec::with_capacity(n);
@@ -263,13 +236,12 @@ fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
         }
     }
 
-    // println!("Found {} blobs.", i);
-    for (i, blob) in blobs.iter().enumerate() {
-        println!(
-            "Blob {} at ({}, {}) to ({}, {})",
-            i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
-        );
-    }
+    // for (i, blob) in blobs.iter().enumerate() {
+    //     println!(
+    //         "Blob {} at ({}, {}) to ({}, {})",
+    //         i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
+    //     );
+    // }
 
     // Sort the blobs by first y, then x
     blobs.sort_by(|a, b| {

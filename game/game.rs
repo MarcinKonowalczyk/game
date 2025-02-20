@@ -1,9 +1,9 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
 use raylib_wasm::{self as raylib};
 
-mod webhacks;
-
 mod anim;
+mod defer;
+mod webhacks;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
