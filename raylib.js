@@ -673,6 +673,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     pub a: u8,
         // }
         LoadImageColors: (id) => {
+            console.log("Loading image colors", id);
             // colors are an array of Color
             const img = images[id];
             const canvas = document.createElement('canvas');
@@ -686,9 +687,14 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             return colors.byteOffset;
         },
         UnloadImageColors: (colors_ptr, size) => {
+            console.log("Unloading image colors", {colors_ptr, size});
             wf.from_js_free(colors_ptr, size);
         },
         IsImageLoaded: (id) => {
+            let img = images[id];
+            if (img === undefined) {
+                return false;
+            }
             return images[id].complete;
         },
         // pub fn LoadTextureFromImage(image: u32) -> u32;
@@ -717,6 +723,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         // pub fn UnloadImage(image: Image) -> ();
         UnloadImage: (image_id) => {
+            console.log("Unloading image", image_id);
             delete images[image_id];
         },
         // pub fn GetTime() -> f64;

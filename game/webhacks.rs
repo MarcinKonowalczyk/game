@@ -109,7 +109,7 @@ pub fn draw_texture_ex(
     unsafe { raylib::DrawTextureEx(texture, position, rotation, scale, tint) }
 }
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 pub fn log(msg: String) {
     #[cfg(feature = "web")]
     unsafe {
@@ -308,6 +308,7 @@ pub fn draw_texture_pro(
     };
 }
 
+#[allow(dead_code)]
 pub fn unload_image(image: Image) {
     #[cfg(feature = "web")]
     unsafe {

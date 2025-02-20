@@ -27,9 +27,9 @@ pub struct State {
     pub font: webhacks::Font,
     pub image: webhacks::Image,
     pub texture: webhacks::Texture,
-    pub anim_blobs_N: u32, // not usize to keep a predictable alignment
+    pub anim_blobs_n: u32, // not usize to keep a predictable alignment
     pub anim_blobs_arr: anim::Blobs, // as many as anim_frames
-    pub test_N: u32,
+    pub test_n: u32,
     pub test_arr: *const u32,
 }
 
@@ -81,9 +81,9 @@ pub unsafe fn game_init() -> State {
         font: font,
         image: image,
         texture: webhacks::null_texture(),
-        anim_blobs_N: 0,
+        anim_blobs_n: 0,
         anim_blobs_arr: anim::null_blobs(),
-        test_N: 3,
+        test_n: 3,
         test_arr: [1, 2, 3].as_ptr(),
     }
 }
@@ -110,7 +110,6 @@ pub unsafe fn game_load(state: &mut State) {
 
     // check if the image is loaded
     if !webhacks::is_image_loaded(state.image) {
-        // webhacks::log("image not loaded".to_string());
         any_not_loaded = true;
     } else {
         // image is loaded! let's load the texture
@@ -125,17 +124,17 @@ pub unsafe fn game_load(state: &mut State) {
             any_not_loaded = true;
         } else {
             // texture is loaded! let's parse the animation
-            let (anim_blobs_arr, anim_blobs_N) = anim::parse_anim(state.image);
+            let (anim_blobs_arr, anim_blobs_n) = anim::parse_anim(state.image);
             state.anim_blobs_arr = anim_blobs_arr;
-            state.anim_blobs_N = anim_blobs_N as u32;
+            state.anim_blobs_n = anim_blobs_n as u32;
         }
     }
 
-    if any_not_loaded {
-        // webhacks::log("not all assets loaded".to_string());
-    } else {
+    if !any_not_loaded {
         state.all_loaded = true;
-        // webhacks::log("all assets loaded".to_string());
+
+        // Once we've determined that init/load is done, we can unload some resources
+        webhacks::unload_image(state.image); // we don't need the image anymore
     }
 
 }
@@ -232,7 +231,7 @@ pub unsafe fn game_frame(state: &mut State) {
         // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
         let anim_blobs = &state.anim_blobs_arr;
-        let i= time_to_anim_frame(t, 0.1, state.anim_blobs_N as u32);
+        let i= time_to_anim_frame(t, 0.1, state.anim_blobs_n as u32);
         
         #[cfg(feature = "native")]
         let blob = anim_blobs[i as usize];
