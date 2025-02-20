@@ -184,6 +184,22 @@ function getVector2FromMemory(buffer, vec_ptr) {
     return { x: mem[0], y: mem[1] };
 }
 
+let ALL_IDS = new Set();
+
+function gen_asset_id() {
+    let _gen_id = () => Math.floor(Math.random() * 1000000);
+    var id = _gen_id();
+    while (ALL_IDS.has(id) || id === 0) {
+        id = _gen_id();
+    }
+    ALL_IDS.add(id);
+    return id;
+}
+
+function drop_asset_id(id) {
+    ALL_IDS.delete(id);
+}
+
 function make_environment(...envs) {
     return new Proxy(envs, {
         get(target, prop, receiver) {
@@ -382,21 +398,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
             }
         },
-        LoadFont: (file_path_ptr) => {
+        LoadFont: (file_path_ptr) => {            
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
 
+            var id = gen_asset_id();
+
+            console.log("Loading font", {id, file_path});
+
             // split at the last slash and at the last dot
-            let ext = file_path.split('.').pop();
+            // let ext = file_path.split('.').pop();
             let font_name = file_path.split('/').pop().split('.').slice(0, -1).join('.');
 
             if (font_map.has(font_name)) {
                 // font already loaded
                 return font_map.get(font_name);
             }
-
-            // generate a unique id for the font
-            var font_id = Math.floor(Math.random() * 1000000);
             
             // fetch the font file
             fetch(file_path).then((response) => {
@@ -417,14 +434,14 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                     }).catch(reject);
                 });
             }).then((font) => {
-                font_map.set(font_id, font_name);
-                return font_id;
+                font_map.set(id, font_name);
+                return id;
             }).catch((err) => {
                 console.log(err);
                 return -1;
             });
 
-            return font_id;
+            return id;
         },
         IsFontLoaded: (font) => {
             return font_map.has(font);
@@ -496,37 +513,27 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.fill();
         },
         LoadTexture: (file_path_ptr) => {
-            console.log("Loading texture");
-            // console.log(result_ptr, file_path_ptr);
+            var id = gen_asset_id();
+            console.log("Loading texture", {id, file_path});
+
             const buffer = wf.memory.buffer;
-            console.log("1");
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
-            console.log("2");
-
-            // let result = new Uint32Array(buffer, result_ptr, 5)
+        
             let img = new Image();
-            var id = Math.floor(Math.random() * 1000000);
-
-            console.log(id);
-
             textures[id] = img;
-
-            // Some info we already know
-            // result[0] = id;
-            // result[3] = 1; // mipmaps
-            // result[4] = 7; // format PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-
-            console.log("Loading image", id, file_path);
-            // img.onload = () => {
-            //     textures[id] = img;
-            // };
             img.src = file_path;
-            
-            // console.log(result);
-            
+
             return id;
         },
+        UnloadTexture: () => {
+            drop_asset_id(id);
+            delete textures[id];
+        },
         IsTextureLoaded: (id) => {
+            const tex = textures[id];
+            if (tex === undefined) {
+                return false;
+            }
             return textures[id].complete;
         },
         GetTextureWidth: (id) => {
@@ -578,7 +585,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             ctx.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 0, 0, destRec.width, destRec.height);
             ctx.restore();
         },
-        UnloadTexture: () => { },
         GetScreenWidth: () => ctx.canvas.width,
         GetScreenHeight: () => ctx.canvas.height,
         GetFrameTime: () => {
@@ -610,9 +616,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         LoadMusicStream: (file_path_ptr) => {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
-
-            let audio_id = Math.floor(Math.random() * 1000000);
-            console.log("Loading music stream", audio_id, file_path);
+            
+            let id = gen_asset_id();
+            console.log("Loading music stream", {id, file_path});
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
@@ -622,7 +628,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 console.log(err);
             });
 
-            return audio_id;
+            return id;
+        },
+        UnloadMusicStream: (id) => {
+            drop_asset_id(id);
+            delete audio[id];
         },
         IsMusicLoaded: () => {
             return audio.loop !== undefined;
@@ -637,18 +647,23 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         LoadImage: (file_path_ptr) => {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
+
+            var id = gen_asset_id();
+            console.log("Loading image", {id, file_path});
+
             let img = new Image();
-            var id = Math.floor(Math.random() * 1000000);
 
             images[id] = img;
-
             img.src = file_path;
 
-            img.onload = () => {
-                console.log("Image loaded", id);
-            }
+            // NOTE: the image is not loaded yet.
+            // img.onload = () => console.log("Image loaded", id);
 
             return id;
+        },
+        UnloadTexture: (id) => {
+            drop_asset_id(id);
+            delete textures[id];
         },
         // pub fn LoadImageColors(image: Image) -> *mut Color;
         // pub struct Color {
@@ -657,38 +672,36 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     pub b: u8,
         //     pub a: u8,
         // }
-        LoadImageColors: (image_id) => {
+        LoadImageColors: (id) => {
             // colors are an array of Color
-            const img = images[image_id];
+            const img = images[id];
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             canvas.width = img.width;
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
             const data = ctx.getImageData(0, 0, img.width, img.height).data;
-            console.log("Image data", data);
             const colors = new Uint8Array(wf.memory.buffer, wf.from_js_malloc(data.length), data.length);
             colors.set(data);
-            console.log("Image colors", colors);
             return colors.byteOffset;
         },
         UnloadImageColors: (colors_ptr, size) => {
             wf.from_js_free(colors_ptr, size);
         },
-        IsImageLoaded: (image_id) => {
-            return images[image_id].complete;
+        IsImageLoaded: (id) => {
+            return images[id].complete;
         },
         // pub fn LoadTextureFromImage(image: u32) -> u32;
-        LoadTextureFromImage: (image_id) => {
-            const img = images[image_id];
-            var tex_id = Math.floor(Math.random() * 1000000);
-            console.log("Loading texture from image. Image id: %d, Texture id: %d", image_id, tex_id);
+        LoadTextureFromImage: (id) => {
+            var tex_id = gen_asset_id();
+            console.log("Loading texture from image", {"image_id": id, "texture_id": tex_id});
+            const img = images[id];
             textures[tex_id] = img;
             return tex_id;
         },
         // pub fn GetImageWidth(image: u32) -> i32;
-        GetImageWidth: (image_id) => {
-            const img = images[image_id];
+        GetImageWidth: (id) => {
+            const img = images[id];
             if (img === undefined) {
                 return 0;
             }
@@ -715,45 +728,10 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 }).then(w => {
     wasm = w;
     wf = w.instance.exports;
-    console.log(w);
+    // console.log(w);
 
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
-
-    let ptr = wf.test();
-
-    function read_my_state(ptr) {
-        const buffer = wasm.instance.exports.memory.buffer;
-
-        var data_view = new DataView(buffer, ptr);
-        var i = 0;
-        var a = data_view.getUint8(i); i += 1;
-        var b = data_view.getFloat32(i, true); i += 4;
-        var c = data_view.getFloat32(i, true); i += 4;
-        var d = data_view.getFloat32(i, true); i += 4;
-        var e = data_view.getFloat32(i, true); i += 4;
-        
-        var N_C = data_view.getUint32(i, true); i += 4;
-        var ptr_C = data_view.getUint32(i, true); i += 4;
-
-        var C = {};
-        for (i = 0; i < N_C; i++) {
-            var data_view = new DataView(buffer, ptr_C + i * 16, 16);
-            var d1 = data_view.getFloat32(0, true);
-            var d2 = data_view.getFloat32(4, true);
-            var d3 = data_view.getFloat32(8, true);
-            var d4 = data_view.getFloat32(12, true);
-            C[i] = { d1, d2, d3, d4 };
-        }
-
-        console.log(C);
-
-        return { a, b, c, d, e };
-    }
-
-    let my_state = read_my_state(ptr);
-
-    console.log(my_state);
 
     let state = wf.game_init();
 
@@ -763,24 +741,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         return data_view.getUint32(0, true) == 1;
     }
 
-    function read_state(ptr) {
+    function parse_state(ptr, n_bytes) {
+        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{image}u{texture}[uuuu]*u*";
+
         const buffer = wasm.instance.exports.memory.buffer;
 
-        // state buffer is 4-byte aligned.
-        var data_view = new DataView(buffer, ptr, 256);
+        function to_struct(buffer, ptr, schema) {
 
-        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
-
-        function data_view_to_struct(data_view, schema) {
+            // state buffer is 4-byte aligned.
+            var data_view = new DataView(buffer, ptr, n_bytes);
 
             let tokens = [];
             for (let token of scanner(schema)) {
                 tokens.push(token);
             }
 
-            console.log("tokens:", tokens);
-
-            function _data_view_to_struct(data_view, tokens, offset) {
+            function _to_struct(data_view, tokens, offset) {
 
                 if (offset === undefined) {
                     offset = 0;
@@ -796,22 +772,48 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                     } 
 
                     if (token.is_array) {
+                        let len = data_view.getUint32(i + offset, true); i += 4;
+                        let ptr = data_view.getUint32(i + offset, true); i += 4;
+
+                        let _len = len * 4;
+
                         if (token.type === "struct") {
-                            // parse array of structs
-                            // first read the length of the array
-                            console.log("parsing array of structs");
-                            let len = data_view.getUint32(i + offset, true);
-                            i += 4;
-                            console.log("array length", len);
-                            let arr = [];
-                            for (let j = 0; j < len; j++) {
-                                let s = _data_view_to_struct(data_view, token.value, i);
-                                arr.push(s[0]);
-                                i += s[1];
-                            }
-                            console.log("parsed array of structs", arr);
-                            out.push(arr);
+                            _len *= token.value.length;
                         }
+
+                        if (len === 0) {
+                            // empty array or null pointer
+                            out.push([]);
+                            continue;
+                        }
+
+                        if (ptr === 0) {
+                            console.error("Null pointer in array", token);
+                            out.push([]);
+                            continue;
+                        }
+
+                        let _data_view = new DataView(buffer, ptr, _len);
+
+                        let _fun = undefined;
+
+                        if (token.type === "struct") {
+                            _fun = (dv, j) => _to_struct(_data_view, token.value, j * token.value.length * 4)[0];
+                        } else if (token.type === "uint32") {
+                            _fun = (dv, j) => _data_view.getUint32(j * 4, true);
+                        } else if (token.type === "float32") {
+                            _fun = (dv, j) => _data_view.getFloat32(j * 4, true);
+                        } else if (token.type === "bool") {
+                            _fun = (dv, j) => _data_view.getUint32(j * 4, true) === 1;
+                        } else {
+                            console.error("Unknown token type", token);
+                        }
+                        
+                        let arr = [];
+                        for (let j = 0; j < len; j++) {
+                            arr.push(_fun(_data_view, j));
+                        }
+                        out.push(arr);
                     } else {
                         // parse single token
                         if (token.type === "uint32") {
@@ -822,13 +824,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                             i += 4;
                         } else if (token.type === "bool") {
                             // We are 4-byte aligned, so a bool takes 4 bytes
-                            let temp = data_view.getUint32(i + offset);
-                            console.log(temp);
                             out.push(data_view.getUint32(i + offset) === 1);
                             i += 4;
                         } else if (token.type === "struct") {
                             // recursively parse the struct
-                            let s = _data_view_to_struct(data_view, token.value, i);
+                            let s = _to_struct(data_view, token.value, i);
                             out.push(s[0]);
                             i += s[1];
                         } else {
@@ -843,20 +843,19 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             
             let out = {};
             let i = 0;
-            [out, i] = _data_view_to_struct(data_view, tokens);
+            [out, i] = _to_struct(data_view, tokens);
 
-            console.log(out, i);
-
-
+            return out;
         }
         
-        data_view_to_struct(data_view, schema);
+        return to_struct(buffer, ptr, schema);
 
     }
 
-    let parsed_state = read_state(ptr);
+    let n_state_size = wf.get_state_size();
 
-    console.log(parsed_state);
+    // console.log("State size", n_state_size);
+    // console.log("State", parse_state(state, n_state_size));
 
     const next = (timestamp) => {
         if (quit) {
@@ -867,17 +866,20 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         dt = (timestamp - prev) / 1000.0;
         prev = timestamp;
         
-        if (read_loaded_flag(ptr)) {
+        if (read_loaded_flag(state)) {
             wf.game_frame(state);
         } else {
             wf.game_load(state);
+            if (read_loaded_flag(state)) {
+                console.log("Game loaded!! :D");
+                console.log(parse_state(state, n_state_size));
+            }
         }
+        // log last element of state
+        // console.log(parse_state(state, n_state_size));
         window.requestAnimationFrame(next);
         // DEBUG: slow down the loop
-        // setTimeout(() => {
-        //     window.requestAnimationFrame(next);
-        // }, 5000
-        // );
+        // setTimeout(() => {window.requestAnimationFrame(next);}, 1000);
     };
     window.requestAnimationFrame((timestamp) => {
         prev = timestamp;

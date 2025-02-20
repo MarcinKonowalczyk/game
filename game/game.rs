@@ -27,15 +27,19 @@ pub struct State {
     pub font: webhacks::Font,
     pub image: webhacks::Image,
     pub texture: webhacks::Texture,
-    pub anim_frames: u32, // not usize to keep a predictable alignment
-    pub anim_blobs: anim::Blobs, // as many as anim_frames
+    pub anim_blobs_N: u32, // not usize to keep a predictable alignment
+    pub anim_blobs_arr: anim::Blobs, // as many as anim_frames
+    pub test_N: u32,
+    pub test_arr: *const u32,
 }
 
+#[no_mangle]
+pub unsafe fn get_state_size() -> usize {
+    std::mem::size_of::<State>()
+}
 
 #[no_mangle]
 pub unsafe fn game_init() -> State {
-    webhacks::log("game_init".to_string());
-
     // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
     // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
     // See: https://github.com/raysan5/raylib/issues/3354
@@ -77,8 +81,10 @@ pub unsafe fn game_init() -> State {
         font: font,
         image: image,
         texture: webhacks::null_texture(),
-        anim_frames: 0,
-        anim_blobs: anim::null_blobs(),
+        anim_blobs_N: 0,
+        anim_blobs_arr: anim::null_blobs(),
+        test_N: 3,
+        test_arr: [1, 2, 3].as_ptr(),
     }
 }
 
@@ -92,19 +98,19 @@ pub unsafe fn game_load(state: &mut State) {
 
     // check if the music is loaded
     if !webhacks::is_music_loaded(state.music) {
-        webhacks::log("music not loaded".to_string());
+        // webhacks::log("music not loaded".to_string());
         any_not_loaded = true;
     }
 
     // check if the font is loaded
     if !webhacks::is_font_loaded(state.font) {
-        webhacks::log("font not loaded".to_string());
+        // webhacks::log("font not loaded".to_string());
         any_not_loaded = true;
     }
 
     // check if the image is loaded
     if !webhacks::is_image_loaded(state.image) {
-        webhacks::log("image not loaded".to_string());
+        // webhacks::log("image not loaded".to_string());
         any_not_loaded = true;
     } else {
         // image is loaded! let's load the texture
@@ -115,50 +121,23 @@ pub unsafe fn game_load(state: &mut State) {
         }
 
         if !webhacks::is_texture_loaded(state.texture) {
-            webhacks::log("texture not loaded".to_string());
+            // webhacks::log("texture not loaded".to_string());
             any_not_loaded = true;
         } else {
             // texture is loaded! let's parse the animation
-            let (anim_blobs, anim_frames) = anim::parse_anim(state.image);
-            state.anim_blobs = anim_blobs;
-            state.anim_frames = anim_frames as u32;
+            let (anim_blobs_arr, anim_blobs_N) = anim::parse_anim(state.image);
+            state.anim_blobs_arr = anim_blobs_arr;
+            state.anim_blobs_N = anim_blobs_N as u32;
         }
     }
 
     if any_not_loaded {
-        webhacks::log("not all assets loaded".to_string());
+        // webhacks::log("not all assets loaded".to_string());
     } else {
         state.all_loaded = true;
-        webhacks::log("all assets loaded".to_string());
+        // webhacks::log("all assets loaded".to_string());
     }
 
-
-
-    // // let texture = raylib::LoadTextureFromImage(image);
-    // let texture = webhacks::load_texture_from_image(image);
-    // // let texture = webhacks::load_texture("assets/Blue_Slime-Idle-mag.png");
-    // webhacks::log("loaded texture from rust".to_string());
-
-    // let (anim_blobs, anim_frames) = anim::parse_anim(image);
-
-    // // raylib::UnloadImage(image);
-    // webhacks::unload_image(image);
-
-    // let first_blob = anim::index_blobs(&anim_blobs, 0);
-
-    // webhacks::log(format!("first blob: {:?}", first_blob));
-    // webhacks::log(format!("anim_frames: {}", anim_frames));
-
-
-
-    // let is_music_loaded = webhacks::is_music_loaded(state.music);
-    // con
-
-
-    // let t = webhacks::get_time();
-    // webhacks::log(format!("game_load: {}", t));
-
-    return;
 }
 
 
@@ -252,8 +231,8 @@ pub unsafe fn game_frame(state: &mut State) {
         // let tint = RAYWHITE;
         // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
 
-        let anim_blobs = &state.anim_blobs;
-        let i= time_to_anim_frame(t, 0.1, state.anim_frames as u32);
+        let anim_blobs = &state.anim_blobs_arr;
+        let i= time_to_anim_frame(t, 0.1, state.anim_blobs_N as u32);
         
         #[cfg(feature = "native")]
         let blob = anim_blobs[i as usize];
@@ -312,75 +291,6 @@ pub unsafe fn game_over() {
     raylib::CloseWindow();
 }
 
-// Keep the layout of these as written here
-
-#[repr(C)]
-pub struct MyRect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-#[repr(C, packed)]
-pub struct MyState {
-    pub a: u8,
-    pub b: MyRect,
-    pub n: usize,
-    pub c: *const MyRect,
-}
-
-#[no_mangle]
-pub unsafe fn test() -> MyState {
-    // State {
-    //     frame_count: 0,
-    //     rect: Rectangle {
-    //         x: 0.0,
-    //         y: 0.0,
-    //         width: 0.0,
-    //         height: 0.0,
-    //     },
-    //     speed: 0.0,
-    //     mouse_pos: Vector2 { x: 0.0, y: 0.0 },
-    //     mouse_btn: false,
-    //     music: webhacks::Music::default(),
-    //     font: webhacks::Font::default(),
-    //     texture: webhacks::Texture::default(),
-    //     anim_blobs: std::ptr::null(),
-    //     anim_frames: 0,
-    // }
-
-    let my_rect_1 = MyRect {
-        x: 6.0,
-        y: 7.0,
-        width: 8.0,
-        height: 9.0,
-    };
-
-    let my_rect_2 = MyRect {
-        x: 10.0,
-        y: 11.0,
-        width: 12.0,
-        height: 13.0,
-    };
-
-    let arr = [my_rect_1, my_rect_2];
-    // let arr = [my_rect_1];
-
-    MyState {
-        a: 1,
-        b: MyRect {
-            x: 2.0,
-            y: 3.0,
-            width: 4.0,
-            height: 5.0,
-        },
-        n: 2,
-        c: arr.as_ptr(),
-    }
-}
-
-
 // CAREFUL!
 // 1) we need these only from we web version
 // 2) if these are called 'malloc' and 'free' they will clash with the ones from stdlib
@@ -389,7 +299,7 @@ pub unsafe fn test() -> MyState {
 #[cfg(feature = "web")]
 #[no_mangle]
 pub fn from_js_malloc(size: usize) -> *mut u8 {
-    webhacks::log(format!("malloc: {}", size));
+    // webhacks::log(format!("malloc: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::alloc(layout) }
 }
@@ -397,7 +307,7 @@ pub fn from_js_malloc(size: usize) -> *mut u8 {
 #[cfg(feature = "web")]
 #[no_mangle]
 pub fn from_js_free(ptr: *mut u8, size: usize) {
-    webhacks::log(format!("free: {}", size));
+    // webhacks::log(format!("free: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
 }
