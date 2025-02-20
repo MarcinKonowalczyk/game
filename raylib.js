@@ -347,7 +347,7 @@ const GetFPS = () => 1.0 / dt;
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
-        ConsoleLog_ (text_ptr) {
+        ConsoleLog_(text_ptr) {
             const buffer = wf.memory.buffer;
             const text = cstr_by_ptr(buffer, text_ptr);
             console.log(text);
@@ -398,13 +398,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
             }
         },
-        LoadFont: (file_path_ptr) => {            
+        LoadFont: (file_path_ptr) => {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
 
             var id = gen_asset_id();
 
-            console.log("Loading font", {id, file_path});
+            console.log("Loading font", { id, file_path });
 
             // split at the last slash and at the last dot
             // let ext = file_path.split('.').pop();
@@ -414,7 +414,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 // font already loaded
                 return font_map.get(font_name);
             }
-            
+
             // fetch the font file
             fetch(file_path).then((response) => {
                 return response.arrayBuffer();
@@ -446,7 +446,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         IsFontLoaded: (font) => {
             return font_map.has(font);
         },
-        DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing,  color_ptr) => {
+        DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing, color_ptr) => {
             const buffer = wf.memory.buffer;
             const text = cstr_by_ptr(buffer, text_ptr);
             const color = getColorFromMemory(buffer, color_ptr);
@@ -460,9 +460,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
 
             ctx.font = `${fontSize}px ${font_name}`;
-            
+
             const lines = text.split('\n');
-        
+
             for (var i = 0; i < lines.length; i++) {
                 const chars = lines[i].split('');
                 let x = posX;
@@ -514,11 +514,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         LoadTexture: (file_path_ptr) => {
             var id = gen_asset_id();
-            console.log("Loading texture", {id, file_path});
+            console.log("Loading texture", { id, file_path });
 
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
-        
+
             let img = new Image();
             textures[id] = img;
             img.src = file_path;
@@ -616,9 +616,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         LoadMusicStream: (file_path_ptr) => {
             const buffer = wf.memory.buffer;
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
-            
+
             let id = gen_asset_id();
-            console.log("Loading music stream", {id, file_path});
+            console.log("Loading music stream", { id, file_path });
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
@@ -649,7 +649,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const file_path = cstr_by_ptr(buffer, file_path_ptr);
 
             var id = gen_asset_id();
-            console.log("Loading image", {id, file_path});
+            console.log("Loading image", { id, file_path });
 
             let img = new Image();
 
@@ -687,7 +687,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             return colors.byteOffset;
         },
         UnloadImageColors: (colors_ptr, size) => {
-            console.log("Unloading image colors", {colors_ptr, size});
+            console.log("Unloading image colors", { colors_ptr, size });
             wf.from_js_free(colors_ptr, size);
         },
         IsImageLoaded: (id) => {
@@ -700,7 +700,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         // pub fn LoadTextureFromImage(image: u32) -> u32;
         LoadTextureFromImage: (id) => {
             var tex_id = gen_asset_id();
-            console.log("Loading texture from image", {"image_id": id, "texture_id": tex_id});
+            console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
             const img = images[id];
             textures[tex_id] = img;
             return tex_id;
@@ -776,7 +776,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                     if (token.type === "error") {
                         console.error("Error parsing schema", token);
                         return;
-                    } 
+                    }
 
                     if (token.is_array) {
                         let len = data_view.getUint32(i + offset, true); i += 4;
@@ -815,7 +815,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                         } else {
                             console.error("Unknown token type", token);
                         }
-                        
+
                         let arr = [];
                         for (let j = 0; j < len; j++) {
                             arr.push(_fun(_data_view, j));
@@ -844,17 +844,17 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                     }
                 }
 
-                return [ out, i ];
-    
+                return [out, i];
+
             }
-            
+
             let out = {};
             let i = 0;
             [out, i] = _to_struct(data_view, tokens);
 
             return out;
         }
-        
+
         return to_struct(buffer, ptr, schema);
 
     }
@@ -872,7 +872,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         }
         dt = (timestamp - prev) / 1000.0;
         prev = timestamp;
-        
+
         if (read_loaded_flag(state)) {
             wf.game_frame(state);
         } else {
@@ -1083,7 +1083,7 @@ function parse_until(schema, i, end) {
         label += schema[i];
         i++;
     }
-    return [ label, i ];
+    return [label, i];
 }
 
 function* scanner(schema) {
@@ -1094,24 +1094,24 @@ function* scanner(schema) {
         if (char === "u") {
             out = { type: "uint32", value: char }
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
             yield out;
         } else if (char === "f") {
             out = { type: "float32", value: char };
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
             yield out;
         } else if (char === "b") {
             out = { type: "bool", value: char };
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
             yield out;
         } else if (char === "[") {
-            out = { type: "struct"};
+            out = { type: "struct" };
             var content = "";
-            [ content, i ] = parse_until(schema, i, "]");
+            [content, i] = parse_until(schema, i, "]");
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [ out.label, i ] = parse_until(schema, ++i, "}");
+            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
 
             // recursively parse the content
             out.value = [];
