@@ -7,14 +7,15 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
         tokens.push(token);
     }
 
-    function _to_struct(data_view, tokens, offset) {
+    function _to_struct(data_view, tokens, i_offset) {
 
-        if (offset === undefined) {
-            offset = 0;
+        if (i_offset === undefined) {
+            i_offset = 0;
         }
 
         var out = [];
-        let i = 0;
+        let i = 0; // byte index
+        let j = 0; // token index
         for (let token of tokens) {
 
             if (token.type === "error") {
@@ -22,9 +23,13 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                 return;
             }
 
+            if (token.label == undefined) {
+                token.label = j.toString();
+            }
+
             if (token.is_array) {
-                let len = data_view.getUint32(i + offset, true); i += 4;
-                let ptr = data_view.getUint32(i + offset, true); i += 4;
+                let len = data_view.getUint32(i + i_offset, true); i += 4;
+                let ptr = data_view.getUint32(i + i_offset, true); i += 4;
 
                 let _len = len * 4;
 
@@ -34,61 +39,71 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 
                 if (len === 0) {
                     // empty array or null pointer
-                    out.push([]);
+                    out.push([token.label, []]);
                     continue;
                 }
 
                 if (ptr === 0) {
                     console.error("Null pointer in array", token);
-                    out.push([]);
+                    out.push([token.label, []]);
                     continue;
                 }
 
                 let _data_view = new DataView(buffer, ptr, _len);
 
+                // let mem = new Uint8Array(buffer, ptr, _len);
+                // console.table(mem);
+
                 let _fun = undefined;
 
                 if (token.type === "struct") {
-                    _fun = (dv, j) => _to_struct(_data_view, token.value, j * token.value.length * 4)[0];
+                    _fun = (dv, k) => _to_struct(_data_view, token.value, k * token.value.length * 4)[0];
                 } else if (token.type === "uint32") {
-                    _fun = (dv, j) => _data_view.getUint32(j * 4, true);
+                    _fun = (dv, k) => _data_view.getUint32(k * 4, true);
                 } else if (token.type === "float32") {
-                    _fun = (dv, j) => _data_view.getFloat32(j * 4, true);
+                    _fun = (dv, k) => _data_view.getFloat32(k * 4, true);
                 } else if (token.type === "bool") {
-                    _fun = (dv, j) => _data_view.getUint32(j * 4, true) === 1;
+                    _fun = (dv, k) => _data_view.getUint32(k * 4, true) === 1;
                 } else {
                     console.error("Unknown token type", token);
                 }
 
                 let arr = [];
-                for (let j = 0; j < len; j++) {
-                    arr.push(_fun(_data_view, j));
+                for (let k = 0; k < len; k++) {
+                    arr.push(_fun(_data_view, k));
                 }
-                out.push(arr);
+                out.push([token.label, arr]);
             } else {
                 // parse single token
                 if (token.type === "uint32") {
-                    out.push(data_view.getUint32(i + offset, true));
+                    out.push([token.label, data_view.getUint32(i + i_offset, true)]);
                     i += 4;
                 } else if (token.type === "float32") {
-                    out.push(data_view.getFloat32(i + offset, true));
+                    out.push([token.label, data_view.getFloat32(i + i_offset, true)]);
                     i += 4;
                 } else if (token.type === "bool") {
                     // We are 4-byte aligned, so a bool takes 4 bytes
-                    out.push(data_view.getUint32(i + offset) === 1);
+                    out.push([token.label, data_view.getUint32(i + i_offset, true) === 1]);
                     i += 4;
                 } else if (token.type === "struct") {
                     // recursively parse the struct
                     let s = _to_struct(data_view, token.value, i);
-                    out.push(s[0]);
+                    out.push([token.label, s[0]]);
                     i += s[1];
                 } else {
                     console.error("Unknown token type", token);
                 }
             }
+
+            j += 1;
         }
 
-        return [out, i];
+        var out2 = {};
+        for (let e of out) {
+            out2[e[0]] = e[1];
+        }
+
+        return [out2, i];
 
     }
 
@@ -146,7 +161,6 @@ function* schema_scanner(schema) {
             yield out;
         } else if (char === " " || char === "," || char === "\n") {
             // silently skip whitespace and commas and newlines
-            i++;
         } else {
             yield { type: "error", value: char };
         }

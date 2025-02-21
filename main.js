@@ -170,7 +170,7 @@ let TARGET_FPS = undefined;
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
-        ConsoleLog_(text_ptr) {
+        ConsoleLog(text_ptr) {
             const buffer = WF.memory.buffer;
             const text = getString(buffer, text_ptr);
             console.log(text);
@@ -269,7 +269,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         IsFontLoaded: (font) => {
             return FONTS.has(font);
         },
-        DrawTextEx_: (font, text_ptr, posX, posY, fontSize, spacing, color_ptr) => {
+        DrawTextEx: (font, text_ptr, posX, posY, fontSize, spacing, color_ptr) => {
             const buffer = WF.memory.buffer;
             const text = getString(buffer, text_ptr);
             const color = getColor(buffer, color_ptr);
@@ -381,7 +381,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     scale: f32,
         //     tint: *const Color,
         // );
-        DrawTextureEx_: (id, x, y, rotation, scale, _color_ptr) => {
+        DrawTextureEx: (id, x, y, rotation, scale, _color_ptr) => {
             const img = TEXTURES[id];
             CTX.save();
             CTX.translate(x, y);
@@ -398,7 +398,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     rotation: f32,
         //     tint: *const Color,
         // );
-        DrawTexturePro_: (id, sourceRec_ptr, destRec_ptr) => {
+        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
             const sourceRec = getRectangle(buffer, sourceRec_ptr);
@@ -445,7 +445,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
-                console.log(response);
                 initAudioContext(response.url);
             }).catch((err) => {
                 console.log(err);
@@ -496,7 +495,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     pub a: u8,
         // }
         LoadImageColors: (id) => {
-            // colors are an array of Color
             const img = IMAGES[id];
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -554,6 +552,21 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         GetTime: () => {
             let t = performance.now();
             return t / 1000;
+        },
+        // pub fn DrawLineEx(startPos: Vector2, endPos: Vector2, thickness: f32, color: *const Color);
+        DrawLineEx(startPos_ptr, endPos_ptr, thickness, color_ptr) {
+            const buffer = WF.memory.buffer;
+            const startPos = getVector2(buffer, startPos_ptr);
+            const endPos = getVector2(buffer, endPos_ptr);
+            const color = getColor(buffer, color_ptr);
+            CTX.beginPath();
+            CTX.moveTo(startPos.x, startPos.y);
+            CTX.lineTo(endPos.x, endPos.y);
+            CTX.lineWidth = thickness;
+            CTX.strokeStyle = color;
+            CTX.stroke();
+            CTX.closePath();
+            CTX.lineWidth = 1;
         }
     })
 }).then(w => {
@@ -573,7 +586,20 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     }
 
     function parse_state(ptr, n_bytes) {
-        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{image}u{texture}[uuuu]*u*";
+        let schema = `
+          b{all_loaded}
+          u{frame_count}
+          [f{x}f{y}f{width}f{height}]{rect}
+          f{speed}
+          [f{x}f{y}]{mouse_pos}
+          b{mouse_btn}
+          u{music}
+          u{font}
+          u{image}
+          u{texture}
+          [uuuu]*{anim_blobs}
+          [f{x}f{y}]*{path}
+        `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
     }
