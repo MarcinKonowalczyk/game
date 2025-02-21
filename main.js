@@ -359,19 +359,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
             return TEXTURES[id].complete;
         },
-        GetTextureWidth: (id) => {
+        // ffi::GetTextureShape(texture, &mut vector)
+        GetTextureShape: (id, vector_ptr) => {
             const img = TEXTURES[id];
-            if (img === undefined) {
-                return 0;
-            }
-            return img.width;
-        },
-        GetTextureHeight: (id) => {
-            const img = TEXTURES[id];
-            if (img === undefined) {
-                return 0;
-            }
-            return img.height;
+            const buffer = WF.memory.buffer;
+            const vector = new Float32Array(buffer, vector_ptr, 2);
+            vector[0] = img.width;
+            vector[1] = img.height;
         },
         // pub fn DrawTextureEx_(
         //     texture: Texture,

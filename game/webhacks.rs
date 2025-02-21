@@ -52,8 +52,7 @@ pub mod ffi {
         // pub fn LoadTexture(file_path: *const i8) -> u32;
         // #[no_mangle]
         pub fn LoadTexture(file_path: *const i8) -> Texture;
-        pub fn GetTextureWidth(texture: Texture) -> i32;
-        pub fn GetTextureHeight(texture: Texture) -> i32;
+        pub fn GetTextureShape(texture: Texture, vector: *mut Vector2);
         pub fn DrawTextureEx(
             texture: Texture,
             positionX: i32,
@@ -155,22 +154,21 @@ pub fn update_music_stream(music: Music) {
     };
 }
 
-pub fn get_texture_height(texture: Texture) -> i32 {
-    #[cfg(feature = "web")]
-    unsafe {
-        ffi::GetTextureHeight(texture)
-    }
-    #[cfg(feature = "native")]
-    texture.height
-}
+pub fn get_texture_shape(texture: Texture) -> Vector2 {
+    let mut vector = Vector2 { x: 0.0, y: 0.0 };
 
-pub fn get_texture_width(texture: Texture) -> i32 {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::GetTextureWidth(texture)
+        ffi::GetTextureShape(texture, &mut vector)
     }
+
     #[cfg(feature = "native")]
-    texture.width
+    {
+        vector.x = texture.width as f32;
+        vector.y = texture.height as f32;
+    }
+
+    vector
 }
 
 pub fn is_mouse_button_down(button: i32) -> bool {

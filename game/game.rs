@@ -11,6 +11,12 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
+pub struct Enemy {
+    pub position: f32, // position along the path
+    pub health: f32,
+    pub max_health: f32,
+}
+
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
 // are in the webhacks::State.
 #[repr(C, align(4))]
@@ -26,10 +32,12 @@ pub struct State {
     pub font: webhacks::Font,
     pub image: webhacks::Image,
     pub texture: webhacks::Texture,
-    pub anim_blobs_n: u32, // not usize to keep a predictable alignment
-    pub anim_blobs_arr: *const anim::Blob, // as many as anim_frames
+    pub anim_blobs_n: u32,
+    pub anim_blobs_arr: *const anim::Blob,
     pub path_n: u32,
     pub path_arr: *const Vector2,
+    pub enemies_n: u32,
+    pub enemies_arr: *const Enemy,
 }
 
 #[no_mangle]
@@ -92,6 +100,8 @@ pub fn game_init() -> State {
         anim_blobs_arr: std::ptr::null(),
         path_n: paths_n,
         path_arr: paths_arr,
+        enemies_n: 0,
+        enemies_arr: std::ptr::null(),
     }
 }
 
@@ -247,16 +257,14 @@ pub fn game_frame(state: &mut State) {
             x: state.rect.x,
             y: state.rect.y,
         };
-        // let rotation = 0.0;
 
         // figure out how to scale the texture to the size of the rect
-        let width = webhacks::get_texture_width(state.texture);
-        let height = webhacks::get_texture_height(state.texture);
+        let shape = webhacks::get_texture_shape(state.texture);
 
-        let scale = state.rect.width / width as f32;
+        let scale = state.rect.width / shape.x as f32;
 
         // Move the texture so it's at the bottom of the rect
-        let scaled_height = height as f32 * scale;
+        let scaled_height = shape.y as f32 * scale;
         position.y += state.rect.height - scaled_height;
 
         // let tint = RAYWHITE;
