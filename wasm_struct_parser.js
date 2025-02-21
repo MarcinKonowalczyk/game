@@ -7,7 +7,7 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
         tokens.push(token);
     }
 
-    function _to_struct(data_view, tokens, i_offset, j_offset) {
+    function _to_struct(data_view, tokens, i_offset) {
 
         if (i_offset === undefined) {
             i_offset = 0;
@@ -51,23 +51,26 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 
                 let _data_view = new DataView(buffer, ptr, _len);
 
+                // let mem = new Uint8Array(buffer, ptr, _len);
+                // console.table(mem);
+
                 let _fun = undefined;
 
                 if (token.type === "struct") {
-                    _fun = (dv, j) => _to_struct(_data_view, token.value, j * token.value.length * 4)[0];
+                    _fun = (dv, k) => _to_struct(_data_view, token.value, k * token.value.length * 4)[0];
                 } else if (token.type === "uint32") {
-                    _fun = (dv, j) => _data_view.getUint32(j * 4, true);
+                    _fun = (dv, k) => _data_view.getUint32(k * 4, true);
                 } else if (token.type === "float32") {
-                    _fun = (dv, j) => _data_view.getFloat32(j * 4, true);
+                    _fun = (dv, k) => _data_view.getFloat32(k * 4, true);
                 } else if (token.type === "bool") {
-                    _fun = (dv, j) => _data_view.getUint32(j * 4, true) === 1;
+                    _fun = (dv, k) => _data_view.getUint32(k * 4, true) === 1;
                 } else {
                     console.error("Unknown token type", token);
                 }
 
                 let arr = [];
-                for (let j = 0; j < len; j++) {
-                    arr.push(_fun(_data_view, j));
+                for (let k = 0; k < len; k++) {
+                    arr.push(_fun(_data_view, k));
                 }
                 out.push([token.label, arr]);
             } else {

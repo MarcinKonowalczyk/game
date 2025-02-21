@@ -4,41 +4,23 @@ use raylib_wasm::{self as raylib, Color};
 
 ////////////////////////
 
-#[cfg(feature = "native")]
-pub type Blobs = Vec<Blob>;
+// #[allow(unused)]
+// pub fn index_blobs(blobs: &*const Blob, index: usize) -> Blob {
+//     return unsafe { *blobs.wrapping_add(index) };
+// }
 
-#[cfg(feature = "web")]
-pub type Blobs = *const Blob;
+// pub fn null_blobs() -> *const Blob {
+//     return std::ptr::null();
+// }
 
-#[allow(unused)]
-pub fn index_blobs(blobs: &Blobs, index: usize) -> Blob {
-    #[cfg(feature = "native")]
-    return blobs[index].clone();
+// pub fn parse_anim(image: webhacks::Image) -> (*const Blob, usize) {
+//     let vec_blobs = find_blobs(image);
+//     let num = vec_blobs.len();
 
-    #[cfg(feature = "web")]
-    return unsafe { *blobs.wrapping_add(index) };
-}
+//     let blobs = vec_blobs.as_ptr();
 
-pub fn null_blobs() -> Blobs {
-    #[cfg(feature = "native")]
-    return Vec::new();
-
-    #[cfg(feature = "web")]
-    return std::ptr::null();
-}
-
-pub fn parse_anim(image: webhacks::Image) -> (Blobs, usize) {
-    let vec_blobs = find_blobs(image);
-    let num = vec_blobs.len();
-
-    #[cfg(feature = "native")]
-    let blobs = vec_blobs;
-
-    #[cfg(feature = "web")]
-    let blobs = vec_blobs.as_ptr();
-
-    return (blobs, num);
-}
+//     return (blobs, num);
+// }
 
 ////////////////////////
 
@@ -179,7 +161,7 @@ impl FindBlobsData {
     }
 }
 
-fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
+pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     let mut blobs = Vec::new();
     let width = webhacks::get_image_width(image);
     let height = webhacks::get_image_height(image);

@@ -27,9 +27,9 @@ pub struct State {
     pub image: webhacks::Image,
     pub texture: webhacks::Texture,
     pub anim_blobs_n: u32, // not usize to keep a predictable alignment
-    pub anim_blobs_arr: anim::Blobs, // as many as anim_frames
-    pub test_n: u32,
-    pub test_arr: *const u32,
+    pub anim_blobs_arr: *const anim::Blob, // as many as anim_frames
+    pub path_n: u32,
+    pub path_arr: *const Vector2,
 }
 
 #[no_mangle]
@@ -64,6 +64,14 @@ pub fn game_init() -> State {
     // let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
+    let paths: Vec<Vector2> = vec![
+        Vector2 { x: 100.0, y: 100.0 },
+        Vector2 { x: 200.0, y: 200.0 },
+        Vector2 { x: 300.0, y: 300.0 },
+    ];
+
+    let (paths_n, paths_arr) = clone_to_malloced(paths);
+
     State {
         all_loaded: false,
         frame_count: 99,
@@ -81,10 +89,31 @@ pub fn game_init() -> State {
         image: image,
         texture: webhacks::null_texture(),
         anim_blobs_n: 0,
-        anim_blobs_arr: anim::null_blobs(),
-        test_n: 3,
-        test_arr: [1, 2, 3].as_ptr(),
+        anim_blobs_arr: std::ptr::null(),
+        path_n: paths_n,
+        path_arr: paths_arr,
     }
+}
+
+fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
+    let n = vec.len().try_into().unwrap();
+    let vec_mem_size = std::mem::size_of::<T>() * vec.len();
+    let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
+    let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
+
+    for (i, item) in vec.iter().enumerate() {
+        unsafe {
+            *vec_ptr.offset(i as isize) = item.clone();
+        }
+    }
+
+    (n, vec_ptr)
+}
+
+#[allow(dead_code)]
+fn free_malloced_array<T>(len: u32, ptr: *mut T) {
+    let layout = std::alloc::Layout::from_size_align(len as usize, 4).unwrap();
+    unsafe { std::alloc::dealloc(ptr as *mut u8, layout) }
 }
 
 pub type GameLoad = fn(state: &mut State);
@@ -131,9 +160,13 @@ pub fn game_load(state: &mut State) {
 
         // Once we've determined that init/load is done, we can unload some resources
 
-        let (anim_blobs_arr, anim_blobs_n) = anim::parse_anim(state.image);
+        let blobs = anim::find_blobs(state.image);
+
+        // we have a vector of blobs. lets put it into a malloced array
+        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(blobs);
+
         state.anim_blobs_arr = anim_blobs_arr;
-        state.anim_blobs_n = anim_blobs_n as u32;
+        state.anim_blobs_n = anim_blobs_n;
 
         webhacks::unload_image(state.image); // we don't need the image anymore
     }
@@ -240,9 +273,6 @@ pub fn game_frame(state: &mut State) {
         let anim_blobs = &state.anim_blobs_arr;
         let i = time_to_anim_frame(t, 0.1, state.anim_blobs_n as u32);
 
-        #[cfg(feature = "native")]
-        let blob = anim_blobs[i as usize];
-        #[cfg(feature = "web")]
         let blob = unsafe { *anim_blobs.wrapping_add(i as usize) };
 
         let source = blob.to_rect();

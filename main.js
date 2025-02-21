@@ -584,7 +584,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           u{image}
           u{texture}
           [uuuu]*{anim_blobs}
-          u*{test}
+          [f{x}f{y}]*{path}
         `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
