@@ -496,7 +496,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     pub a: u8,
         // }
         LoadImageColors: (id) => {
-            // colors are an array of Color
             const img = IMAGES[id];
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -573,7 +572,20 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     }
 
     function parse_state(ptr, n_bytes) {
-        let schema = "bu[ffff]f{speed}[ff]bu{music}u{font}u{image}u{texture}[uuuu]*u*";
+        let schema = `
+          b{all_loaded}
+          u{frame_count}
+          [f{x}f{y}f{width}f{height}]{rect}
+          f{speed}
+          [f{x}f{y}]{mouse_pos}
+          b{mouse_btn}
+          u{music}
+          u{font}
+          u{image}
+          u{texture}
+          [uuuu]*{anim_blobs}
+          u*{test}
+        `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
     }
