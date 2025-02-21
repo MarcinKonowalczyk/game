@@ -66,7 +66,7 @@ pub fn game_init() -> State {
 
     let paths: Vec<Vector2> = vec![
         Vector2 { x: 100.0, y: 100.0 },
-        Vector2 { x: 200.0, y: 200.0 },
+        Vector2 { x: 100.0, y: 200.0 },
         Vector2 { x: 300.0, y: 300.0 },
     ];
 
@@ -196,18 +196,10 @@ fn handle_keys(state: &mut State) {
         d = raylib::IsKeyDown(KEY::D);
     }
 
-    if w {
-        state.rect.y -= dt * state.speed
-    }
-    if s {
-        state.rect.y += dt * state.speed
-    }
-    if a {
-        state.rect.x -= dt * state.speed
-    }
-    if d {
-        state.rect.x += dt * state.speed
-    }
+    state.rect.y -= dt * state.speed * (w as i32 as f32);
+    state.rect.y += dt * state.speed * (s as i32 as f32);
+    state.rect.x -= dt * state.speed * (a as i32 as f32);
+    state.rect.x += dt * state.speed * (d as i32 as f32);
 
     // prevent the rect from wandering off the screen too far
     if state.rect.x < -state.rect.width {
@@ -313,6 +305,15 @@ pub fn game_frame(state: &mut State) {
                 color,
             )
         };
+
+        // Draw the path
+        let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
+        for i in 1..path.len() {
+            let p1 = path[i - 1];
+            let p2 = path[i];
+            webhacks::draw_line_ex(p1, p2, 2.0, RAYWHITE);
+            // unsafe { raylib::DrawLineEx(p1, p2, 2.0, RAYWHITE) }
+        }
     }
     unsafe { raylib::EndDrawing() };
 

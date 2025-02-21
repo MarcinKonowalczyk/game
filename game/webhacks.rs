@@ -79,6 +79,12 @@ pub mod ffi {
         pub fn IsFontLoaded(music: Font) -> bool;
         pub fn IsImageLoaded(music: Image) -> bool;
         pub fn IsTextureLoaded(music: Texture) -> bool;
+        pub fn DrawLineEx(
+            startPos: *const Vector2,
+            endPos: *const Vector2,
+            thickness: f32,
+            color: *const Color,
+        );
     }
 }
 
@@ -378,4 +384,20 @@ pub fn null_texture() -> Texture {
         mipmaps: 0,
         format: 0,
     };
+}
+
+pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color: Color) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::DrawLineEx(
+            addr_of!(start_pos),
+            addr_of!(end_pos),
+            thickness,
+            addr_of!(color),
+        );
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::DrawLineEx(start_pos, end_pos, thickness, color);
+    }
 }

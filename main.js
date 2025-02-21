@@ -553,6 +553,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         GetTime: () => {
             let t = performance.now();
             return t / 1000;
+        },
+        // pub fn DrawLineEx(startPos: Vector2, endPos: Vector2, thickness: f32, color: *const Color);
+        DrawLineEx(startPos_ptr, endPos_ptr, thickness, color_ptr) {
+            console.log("DrawLineEx", { startPos_ptr, endPos_ptr, thickness, color_ptr });
+            const buffer = WF.memory.buffer;
+            const startPos = getVector2(buffer, startPos_ptr);
+            const endPos = getVector2(buffer, endPos_ptr);
+            const color = getColor(buffer, color_ptr);
+            CTX.beginPath();
+            CTX.moveTo(startPos.x, startPos.y);
+            CTX.lineTo(endPos.x, endPos.y);
+            CTX.lineWidth = thickness;
+            CTX.strokeStyle = color;
+            CTX.stroke();
+            CTX.closePath();
+            CTX.lineWidth = 1;
         }
     })
 }).then(w => {
