@@ -38,9 +38,9 @@ pub mod ffi {
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
         // pub fn IsMusicReady(music: u32) -> bool;
         pub fn IsMouseButtonDown(button: i32) -> bool;
-        pub fn ConsoleLog_(msg: *const i8);
+        pub fn ConsoleLog(msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
-        pub fn DrawTextEx_(
+        pub fn DrawTextEx(
             font: Font,
             text: *const i8,
             positionX: i32,
@@ -49,12 +49,12 @@ pub mod ffi {
             spacing: f32,
             tint: *const Color,
         );
-        // pub fn LoadTexture_(file_path: *const i8) -> u32;
+        // pub fn LoadTexture(file_path: *const i8) -> u32;
         // #[no_mangle]
         pub fn LoadTexture(file_path: *const i8) -> Texture;
         pub fn GetTextureWidth(texture: Texture) -> i32;
         pub fn GetTextureHeight(texture: Texture) -> i32;
-        pub fn DrawTextureEx_(
+        pub fn DrawTextureEx(
             texture: Texture,
             positionX: i32,
             positionY: i32,
@@ -67,7 +67,7 @@ pub mod ffi {
         pub fn UnloadImageColors(colors: *mut Color, n: usize);
         pub fn GetImageWidth(image: Image) -> i32;
         pub fn GetImageHeight(image: Image) -> i32;
-        pub fn DrawTexturePro_(
+        pub fn DrawTexturePro(
             texture: Texture,
             sourceRec: *const raylib::Rectangle,
             destRec: *const raylib::Rectangle,
@@ -89,10 +89,16 @@ pub mod ffi {
 }
 
 #[allow(dead_code)]
-#[cfg(feature = "web")]
-pub fn draw_texture_ex(texture: u32, position: Vector2, rotation: f32, scale: f32, tint: Color) {
+pub fn draw_texture_ex(
+    texture: Texture,
+    position: Vector2,
+    rotation: f32,
+    scale: f32,
+    tint: Color,
+) {
+    #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextureEx_(
+        ffi::DrawTextureEx(
             texture,
             position.x as i32,
             position.y as i32,
@@ -101,25 +107,17 @@ pub fn draw_texture_ex(texture: u32, position: Vector2, rotation: f32, scale: f3
             addr_of!(tint),
         )
     }
-}
-
-#[allow(dead_code)]
-#[cfg(feature = "native")]
-pub fn draw_texture_ex(
-    texture: raylib::Texture,
-    position: Vector2,
-    rotation: f32,
-    scale: f32,
-    tint: Color,
-) {
-    unsafe { raylib::DrawTextureEx(texture, position, rotation, scale, tint) }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::DrawTextureEx(texture, position, rotation, scale, tint)
+    }
 }
 
 #[allow(non_snake_case, dead_code)]
 pub fn log(msg: String) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::ConsoleLog_(cstr!(msg))
+        ffi::ConsoleLog(cstr!(msg))
     };
     #[cfg(feature = "native")]
     println!("{}", msg);
@@ -142,7 +140,7 @@ pub fn draw_text(font: Font, text: &str, x: i32, y: i32, size: i32, color: Color
     }
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextEx_(font, cstr!(text), x, y, size, 2.0, addr_of!(color))
+        ffi::DrawTextEx(font, cstr!(text), x, y, size, 2.0, addr_of!(color))
     }
 }
 
@@ -295,7 +293,7 @@ pub fn draw_texture_pro(
 ) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTexturePro_(texture, addr_of!(source_rec), addr_of!(dest_rec))
+        ffi::DrawTexturePro(texture, addr_of!(source_rec), addr_of!(dest_rec))
     };
     #[cfg(feature = "native")]
     unsafe {
