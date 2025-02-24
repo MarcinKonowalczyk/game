@@ -2,6 +2,9 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 
     var data_view = new DataView(buffer, ptr, n_bytes);
 
+    let mem = new Uint8Array(buffer, ptr, n_bytes);
+    console.table(mem);
+
     let tokens = [];
     for (let token of schema_scanner(schema)) {
         tokens.push(token);
@@ -62,6 +65,8 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                     _fun = (dv, k) => _data_view.getUint32(k * 4, true);
                 } else if (token.type === "float32") {
                     _fun = (dv, k) => _data_view.getFloat32(k * 4, true);
+                } else if (token.type === "float64") {
+                    _fun = (dv, k) => _data_view.getFloat64(k * 8, true);
                 } else if (token.type === "bool") {
                     _fun = (dv, k) => _data_view.getUint32(k * 4, true) === 1;
                 } else {
@@ -81,6 +86,9 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                 } else if (token.type === "float32") {
                     out.push([token.label, data_view.getFloat32(i + i_offset, true)]);
                     i += 4;
+                } else if (token.type === "float64") {
+                    out.push([token.label, data_view.getFloat64(i + i_offset, true)]);
+                    i += 8;
                 } else if (token.type === "bool") {
                     // We are 4-byte aligned, so a bool takes 4 bytes
                     out.push([token.label, data_view.getUint32(i + i_offset, true) === 1]);
@@ -138,6 +146,11 @@ function* schema_scanner(schema) {
             yield out;
         } else if (char === "f") {
             out = { type: "float32", value: char };
+            if (schema[i + 1] === "*") { i++; out.is_array = true; }
+            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
+            yield out;
+        } else if (char === "F") {
+            out = { type: "float64", value: char };
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
             if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
             yield out;

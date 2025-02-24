@@ -582,18 +582,21 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     function parse_state(ptr, n_bytes) {
         let schema = `
           b{all_loaded}
+          F{curr_time}
+          F{prev_time}
           u{frame_count}
           [f{x}f{y}f{width}f{height}]{rect}
-          f{speed}
-          [f{x}f{y}]{mouse_pos}
-          b{mouse_btn}
-          u{music}
-          u{font}
-          u{image}
-          u{texture}
-          [uuuu]*{anim_blobs}
-          [f{x}f{y}]*{path}
-        `;
+            f{speed}
+              [f{x}f{y}]{mouse_pos}
+              b{mouse_btn}
+              u{music}
+              u{font}
+              u{image}
+              u{texture}
+              `;
+        //   [uuuu]*{anim_blobs}
+        //   [f{x}f{y}]*{path}
+        //   f{path_length}
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
     }

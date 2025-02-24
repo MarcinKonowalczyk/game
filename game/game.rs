@@ -1,5 +1,5 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
-use raylib_wasm::{self as raylib};
+use raylib_wasm::{self as raylib, BEIGE};
 
 mod anim;
 mod defer;
@@ -11,10 +11,17 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
+const SPAWN_INTERVAL: f64 = 1.0;
+const SPEED_ENEMY: f32 = 100.0;
+
+#[derive(Clone, Debug)]
 pub struct Enemy {
-    pub position: f32, // position along the path
+    pub position: f32, // position along the path in pixels
     pub health: f32,
     pub max_health: f32,
+    pub spawn_time: f64,
+    pub last_hit_time: f64,
+    pub dead: bool,
 }
 
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
@@ -23,6 +30,10 @@ pub struct Enemy {
 #[derive(Clone)]
 pub struct State {
     pub all_loaded: bool,
+    pub curr_time_2: u32,
+    pub curr_time_1: u32,
+    pub prev_time_2: u32,
+    pub prev_time_1: u32,
     pub frame_count: u32,
     pub rect: Rectangle,
     pub speed: f32,
@@ -36,8 +47,50 @@ pub struct State {
     pub anim_blobs_arr: *const anim::Blob,
     pub path_n: u32,
     pub path_arr: *const Vector2,
+    pub path_length: f32,
     pub enemies_n: u32,
-    pub enemies_arr: *const Enemy,
+    pub enemies_arr: *mut Enemy,
+}
+
+fn assemble_time(a: u32, b: u32) -> f64 {
+    let mut t: u64 = 0;
+    t |= (a as u64) << 32;
+    t |= b as u64;
+    f64::from_bits(t)
+}
+
+fn disassemble_time(t: f64) -> (u32, u32) {
+    let t_bits = t.to_bits();
+    let a = (t_bits >> 32) as u32;
+    let b = t_bits as u32;
+    (a, b)
+}
+
+impl State {
+    fn get_current_time(&self) -> f64 {
+        assemble_time(self.curr_time_1, self.curr_time_2)
+    }
+
+    fn set_current_time(&mut self, t: f64) {
+        let (a, b) = disassemble_time(t);
+        self.curr_time_1 = a;
+        self.curr_time_2 = b;
+    }
+
+    fn get_previous_time(&self) -> f64 {
+        assemble_time(self.prev_time_1, self.prev_time_2)
+    }
+
+    fn set_previous_time(&mut self, t: f64) {
+        let (a, b) = disassemble_time(t);
+        self.prev_time_1 = a;
+        self.prev_time_2 = b;
+    }
+
+    fn set_previous_to_current(&mut self) {
+        self.prev_time_1 = self.curr_time_1;
+        self.prev_time_2 = self.curr_time_2;
+    }
 }
 
 #[no_mangle]
@@ -72,16 +125,27 @@ pub fn game_init() -> State {
     // let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
-    let paths: Vec<Vector2> = vec![
+    let path_points: Vec<Vector2> = vec![
         Vector2 { x: 100.0, y: 100.0 },
         Vector2 { x: 100.0, y: 200.0 },
         Vector2 { x: 300.0, y: 300.0 },
     ];
 
-    let (paths_n, paths_arr) = clone_to_malloced(paths);
+    let path_length = path_points
+        .iter()
+        .fold((0.0, path_points[0]), |(acc, prev), &p| {
+            (acc + pp_distance2(prev, p).sqrt(), p)
+        })
+        .0;
 
-    State {
+    let (path_n, path_arr) = clone_to_malloced(path_points);
+
+    let mut s = State {
         all_loaded: false,
+        curr_time_1: 0,
+        curr_time_2: 0,
+        prev_time_1: 0,
+        prev_time_2: 0,
         frame_count: 99,
         rect: Rectangle {
             x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
@@ -98,17 +162,29 @@ pub fn game_init() -> State {
         texture: webhacks::null_texture(),
         anim_blobs_n: 0,
         anim_blobs_arr: std::ptr::null(),
-        path_n: paths_n,
-        path_arr: paths_arr,
+        path_n: path_n,
+        path_arr: path_arr,
+        path_length: path_length,
         enemies_n: 0,
-        enemies_arr: std::ptr::null(),
-    }
+        enemies_arr: std::ptr::null_mut(),
+    };
+
+    s.set_current_time(webhacks::get_time());
+
+    s
 }
 
 fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
+    // webhacks::log("clone_to_malloced".to_string());
     let n = vec.len().try_into().unwrap();
+    // webhacks::log(format!(
+    //     "clone_to_malloced: {:?}, {:?}",
+    //     std::mem::size_of::<T>(),
+    //     n
+    // ));
     let vec_mem_size = std::mem::size_of::<T>() * vec.len();
     let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
+    // webhacks::log(format!("malloc: {}, {:?}", vec_mem_size, layout));
     let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
 
     for (i, item) in vec.iter().enumerate() {
@@ -122,14 +198,32 @@ fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
 
 #[allow(dead_code)]
 fn free_malloced_array<T>(len: u32, ptr: *mut T) {
-    let layout = std::alloc::Layout::from_size_align(len as usize, 4).unwrap();
-    unsafe { std::alloc::dealloc(ptr as *mut u8, layout) }
+    // webhacks::log(format!("free_malloced_array: {}, {:?}", len, ptr));
+    let size = std::mem::size_of::<T>() * len as usize;
+    let maybe_layout = std::alloc::Layout::from_size_align(size, 4);
+    if maybe_layout.is_err() {
+        // webhacks::log("free_malloced_array: layout error".to_string());
+        return;
+    }
+    let layout = maybe_layout.unwrap();
+    // webhacks::log("free_malloced_array _ptr".to_string());
+    let _ptr = ptr as *mut u8;
+    // webhacks::log("free_malloced_array dealloc".to_string());
+    // webhacks::log(format!(
+    //     "free_malloced_array dealloc: {:?}, {:?}",
+    //     layout, _ptr
+    // ));
+    unsafe { std::alloc::dealloc(_ptr, layout) }
+    // webhacks::log("free_malloced_array done".to_string());
 }
 
 pub type GameLoad = fn(state: &mut State);
 
 #[no_mangle]
 pub fn game_load(state: &mut State) {
+    state.set_previous_to_current();
+    state.set_current_time(webhacks::get_time());
+
     if state.all_loaded {
         return;
     }
@@ -178,7 +272,12 @@ pub fn game_load(state: &mut State) {
         state.anim_blobs_arr = anim_blobs_arr;
         state.anim_blobs_n = anim_blobs_n;
 
-        webhacks::unload_image(state.image); // we don't need the image anymore
+        webhacks::unload_image(state.image); // we don't need the image anymore    }
+
+        let curr_time = state.get_current_time();
+        let prev_time = state.get_previous_time();
+        webhacks::log(format!("current time: {}", curr_time));
+        webhacks::log(format!("pre time: {}", prev_time));
     }
 }
 
@@ -238,56 +337,170 @@ fn handle_mouse(state: &mut State) {
     state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32;
 }
 
+fn draw_slime_at_rect(
+    rect: Rectangle,
+    anim_blobs: &[anim::Blob],
+    texture: webhacks::Texture,
+    time: f64,
+) {
+    let mut position = Vector2 {
+        x: rect.x,
+        y: rect.y,
+    };
+
+    // figure out how to scale the texture to the size of the rect
+    let shape = webhacks::get_texture_shape(texture);
+    let scale = rect.width / shape.x as f32;
+
+    // Move the texture so it's at the bottom of the rect
+    let scaled_height = shape.y as f32 * scale;
+    position.y += rect.height - scaled_height;
+
+    let i = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
+
+    let blob = anim_blobs[i as usize];
+    let source = blob.to_rect();
+    webhacks::draw_texture_pro(
+        texture,
+        source,
+        Rectangle {
+            x: position.x,
+            y: position.y,
+            width: rect.width,
+            height: scaled_height,
+        },
+    );
+}
+
+fn process_enemies(state: &mut State) {
+    // webhacks::log("processing enemies".to_string());
+    let mut new_enemies: Vec<Enemy> = if state.enemies_arr.is_null() {
+        // we don't have any enemies yet
+        vec![]
+    } else {
+        let enemies =
+            unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) };
+
+        enemies.to_vec()
+    };
+
+    // remove all the dead enemies from the list
+    // these will be the ones which were marked as dead in the previous frame
+    new_enemies = new_enemies
+        .into_iter()
+        .filter(|enemy| !enemy.dead)
+        .collect();
+
+    let last_enemy = new_enemies.last();
+
+    // spawn a new enemy every second
+    let curr_time = state.get_current_time();
+
+    if last_enemy.is_none() || curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
+        // spawn a new enemy
+        let new_enemy = Enemy {
+            position: 0.0,
+            health: 100.0,
+            max_health: 100.0,
+            spawn_time: curr_time,
+            last_hit_time: curr_time,
+            dead: false,
+        };
+        new_enemies.push(new_enemy);
+    }
+
+    // move the enemies along the path
+    let prev_time = state.get_previous_time();
+    let dt = curr_time - prev_time;
+    for enemy in new_enemies.iter_mut() {
+        enemy.position += SPEED_ENEMY * dt as f32;
+    }
+
+    // mark enemies that have reached the end of the path as dead
+    for enemy in new_enemies.iter_mut() {
+        if enemy.position >= state.path_length {
+            enemy.dead = true;
+        }
+    }
+
+    // update the state
+    if !state.enemies_arr.is_null() {
+        free_malloced_array(state.enemies_n, state.enemies_arr);
+    }
+    let (enemies_n, enemies_arr) = clone_to_malloced(new_enemies);
+    state.enemies_n = enemies_n;
+    state.enemies_arr = enemies_arr;
+}
+
+fn pp_distance2(p1: Vector2, p2: Vector2) -> f32 {
+    let dx = p1.x - p2.x;
+    let dy = p1.y - p2.y;
+    dx * dx + dy * dy
+}
+
+fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
+    // path_pos in pixels
+
+    // walk along the path until we reach the correct position
+    let mut current_path_length = 0.0;
+    for i in 1..path.len() {
+        let p1 = path[i - 1];
+        let p2 = path[i];
+        let segment_length = pp_distance2(p1, p2).sqrt();
+        if current_path_length + segment_length >= path_pos {
+            // we've found the segment that contains the position
+            let segment_pos = (path_pos - current_path_length) / segment_length;
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            return Vector2 {
+                x: p1.x + dx * segment_pos,
+                y: p1.y + dy * segment_pos,
+            };
+        }
+        current_path_length += segment_length;
+    }
+
+    Vector2 {
+        x: path[path.len() - 1].x,
+        y: path[path.len() - 1].y,
+    }
+}
+
+fn draw_enemies(state: &State) {
+    let enemies =
+        unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) };
+
+    let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
+
+    for enemy in enemies.iter() {
+        let pos = path_pos_to_screen_pos(enemy.position, path);
+
+        webhacks::draw_circle(pos, 10.0, BEIGE);
+    }
+}
+
 pub type GameFrame = fn(state: &mut State);
 
 #[no_mangle]
 pub fn game_frame(state: &mut State) {
-    let t = webhacks::get_time();
+    state.set_previous_to_current();
+    state.set_current_time(webhacks::get_time());
 
     handle_keys(state);
     handle_mouse(state);
 
+    process_enemies(state);
+
+    let curr_time = state.get_current_time();
     unsafe { raylib::BeginDrawing() };
 
     {
         unsafe { raylib::ClearBackground(DARKGREEN) };
-        webhacks::draw_text(state.font, "hello world", 250, 500, 50, RAYWHITE);
 
-        let mut position = Vector2 {
-            x: state.rect.x,
-            y: state.rect.y,
+        let anim_blobs = unsafe {
+            std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
         };
-
-        // figure out how to scale the texture to the size of the rect
-        let shape = webhacks::get_texture_shape(state.texture);
-
-        let scale = state.rect.width / shape.x as f32;
-
-        // Move the texture so it's at the bottom of the rect
-        let scaled_height = shape.y as f32 * scale;
-        position.y += state.rect.height - scaled_height;
-
-        // let tint = RAYWHITE;
-        // webhacks::draw_texture_ex(texture, position, rotation, scale, tint);
-
-        let anim_blobs = &state.anim_blobs_arr;
-        let i = time_to_anim_frame(t, 0.1, state.anim_blobs_n as u32);
-
-        let blob = unsafe { *anim_blobs.wrapping_add(i as usize) };
-
-        let source = blob.to_rect();
-
-        // raylib::DrawTexturePro(
-        webhacks::draw_texture_pro(
-            state.texture,
-            source,
-            Rectangle {
-                x: position.x,
-                y: position.y,
-                width: state.rect.width,
-                height: scaled_height,
-            },
-        );
+        draw_slime_at_rect(state.rect, anim_blobs, state.texture, curr_time);
 
         let rect_pos = format! {
             "rect: [{x}, {y}]",
@@ -305,14 +518,7 @@ pub fn game_frame(state: &mut State) {
 
         let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
 
-        unsafe {
-            raylib::DrawCircle(
-                state.mouse_pos.x as i32,
-                state.mouse_pos.y as i32,
-                10.0,
-                color,
-            )
-        };
+        webhacks::draw_circle(state.mouse_pos, 10.0, color);
 
         // Draw the path
         let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
@@ -322,6 +528,9 @@ pub fn game_frame(state: &mut State) {
             webhacks::draw_line_ex(p1, p2, 2.0, RAYWHITE);
             // unsafe { raylib::DrawLineEx(p1, p2, 2.0, RAYWHITE) }
         }
+
+        // Draw the enemies
+        draw_enemies(state);
     }
     unsafe { raylib::EndDrawing() };
 
