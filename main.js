@@ -582,21 +582,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     function parse_state(ptr, n_bytes) {
         let schema = `
           b{all_loaded}
-          F{curr_time}
-          F{prev_time}
+          f{curr_time}
+          f{prev_time}
           u{frame_count}
           [f{x}f{y}f{width}f{height}]{rect}
-            f{speed}
-              [f{x}f{y}]{mouse_pos}
-              b{mouse_btn}
-              u{music}
-              u{font}
-              u{image}
-              u{texture}
-              `;
-        //   [uuuu]*{anim_blobs}
-        //   [f{x}f{y}]*{path}
-        //   f{path_length}
+          f{speed}
+          [f{x}f{y}]{mouse_pos}
+          b{mouse_btn}
+          u{music}
+          u{font}
+          u{image}
+          u{texture}
+          [uuuu]*{anim_blobs}
+          [f{x}f{y}]*{path}
+          f{path_length}
+          [fffffb]*{enemies}
+          `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
     }
@@ -625,7 +626,9 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
         }
         // log last element of state
-        // console.log(parse_state(state, n_state_size));
+        // let parsed_state = parse_state(state, n_state_size);
+        // let dt = parsed_state.curr_time - parsed_state.prev_time;
+        // console.log(parsed_state.enemies[0]);
         window.requestAnimationFrame(next);
         // DEBUG: slow down the loop
         // setTimeout(() => {window.requestAnimationFrame(next);}, 1000);

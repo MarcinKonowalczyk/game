@@ -11,7 +11,7 @@ const WINDOW_HEIGHT: i32 = 600;
 const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
-const SPAWN_INTERVAL: f64 = 1.0;
+const SPAWN_INTERVAL: f32 = 1.0;
 const SPEED_ENEMY: f32 = 100.0;
 
 #[derive(Clone, Debug)]
@@ -19,8 +19,8 @@ pub struct Enemy {
     pub position: f32, // position along the path in pixels
     pub health: f32,
     pub max_health: f32,
-    pub spawn_time: f64,
-    pub last_hit_time: f64,
+    pub spawn_time: f32,
+    pub last_hit_time: f32,
     pub dead: bool,
 }
 
@@ -30,10 +30,8 @@ pub struct Enemy {
 #[derive(Clone)]
 pub struct State {
     pub all_loaded: bool,
-    pub curr_time_2: u32,
-    pub curr_time_1: u32,
-    pub prev_time_2: u32,
-    pub prev_time_1: u32,
+    pub curr_time: f32,
+    pub prev_time: f32,
     pub frame_count: u32,
     pub rect: Rectangle,
     pub speed: f32,
@@ -50,47 +48,6 @@ pub struct State {
     pub path_length: f32,
     pub enemies_n: u32,
     pub enemies_arr: *mut Enemy,
-}
-
-fn assemble_time(a: u32, b: u32) -> f64 {
-    let mut t: u64 = 0;
-    t |= (a as u64) << 32;
-    t |= b as u64;
-    f64::from_bits(t)
-}
-
-fn disassemble_time(t: f64) -> (u32, u32) {
-    let t_bits = t.to_bits();
-    let a = (t_bits >> 32) as u32;
-    let b = t_bits as u32;
-    (a, b)
-}
-
-impl State {
-    fn get_current_time(&self) -> f64 {
-        assemble_time(self.curr_time_1, self.curr_time_2)
-    }
-
-    fn set_current_time(&mut self, t: f64) {
-        let (a, b) = disassemble_time(t);
-        self.curr_time_1 = a;
-        self.curr_time_2 = b;
-    }
-
-    fn get_previous_time(&self) -> f64 {
-        assemble_time(self.prev_time_1, self.prev_time_2)
-    }
-
-    fn set_previous_time(&mut self, t: f64) {
-        let (a, b) = disassemble_time(t);
-        self.prev_time_1 = a;
-        self.prev_time_2 = b;
-    }
-
-    fn set_previous_to_current(&mut self) {
-        self.prev_time_1 = self.curr_time_1;
-        self.prev_time_2 = self.curr_time_2;
-    }
 }
 
 #[no_mangle]
@@ -140,12 +97,10 @@ pub fn game_init() -> State {
 
     let (path_n, path_arr) = clone_to_malloced(path_points);
 
-    let mut s = State {
+    State {
         all_loaded: false,
-        curr_time_1: 0,
-        curr_time_2: 0,
-        prev_time_1: 0,
-        prev_time_2: 0,
+        curr_time: webhacks::get_time() as f32,
+        prev_time: 0.0,
         frame_count: 99,
         rect: Rectangle {
             x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
@@ -167,11 +122,7 @@ pub fn game_init() -> State {
         path_length: path_length,
         enemies_n: 0,
         enemies_arr: std::ptr::null_mut(),
-    };
-
-    s.set_current_time(webhacks::get_time());
-
-    s
+    }
 }
 
 fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
@@ -221,8 +172,8 @@ pub type GameLoad = fn(state: &mut State);
 
 #[no_mangle]
 pub fn game_load(state: &mut State) {
-    state.set_previous_to_current();
-    state.set_current_time(webhacks::get_time());
+    state.prev_time = state.curr_time;
+    state.curr_time = webhacks::get_time() as f32;
 
     if state.all_loaded {
         return;
@@ -274,14 +225,12 @@ pub fn game_load(state: &mut State) {
 
         webhacks::unload_image(state.image); // we don't need the image anymore    }
 
-        let curr_time = state.get_current_time();
-        let prev_time = state.get_previous_time();
-        webhacks::log(format!("current time: {}", curr_time));
-        webhacks::log(format!("pre time: {}", prev_time));
+        webhacks::log(format!("current time: {}", state.curr_time));
+        webhacks::log(format!("pre time: {}", state.prev_time));
     }
 }
 
-fn time_to_anim_frame(time: f64, frame_duration: f64, n_frames: u32) -> u32 {
+fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> u32 {
     let frame = (time / frame_duration) as u32 % n_frames;
     frame
 }
@@ -341,7 +290,7 @@ fn draw_slime_at_rect(
     rect: Rectangle,
     anim_blobs: &[anim::Blob],
     texture: webhacks::Texture,
-    time: f64,
+    time: f32,
 ) {
     let mut position = Vector2 {
         x: rect.x,
@@ -394,24 +343,21 @@ fn process_enemies(state: &mut State) {
     let last_enemy = new_enemies.last();
 
     // spawn a new enemy every second
-    let curr_time = state.get_current_time();
-
-    if last_enemy.is_none() || curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
+    if last_enemy.is_none() || state.curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
         // spawn a new enemy
         let new_enemy = Enemy {
             position: 0.0,
             health: 100.0,
             max_health: 100.0,
-            spawn_time: curr_time,
-            last_hit_time: curr_time,
+            spawn_time: state.curr_time,
+            last_hit_time: state.curr_time,
             dead: false,
         };
         new_enemies.push(new_enemy);
     }
 
     // move the enemies along the path
-    let prev_time = state.get_previous_time();
-    let dt = curr_time - prev_time;
+    let dt = state.curr_time - state.prev_time;
     for enemy in new_enemies.iter_mut() {
         enemy.position += SPEED_ENEMY * dt as f32;
     }
@@ -483,15 +429,14 @@ pub type GameFrame = fn(state: &mut State);
 
 #[no_mangle]
 pub fn game_frame(state: &mut State) {
-    state.set_previous_to_current();
-    state.set_current_time(webhacks::get_time());
+    state.prev_time = state.curr_time;
+    state.curr_time = webhacks::get_time() as f32;
 
     handle_keys(state);
     handle_mouse(state);
 
     process_enemies(state);
 
-    let curr_time = state.get_current_time();
     unsafe { raylib::BeginDrawing() };
 
     {
@@ -500,7 +445,7 @@ pub fn game_frame(state: &mut State) {
         let anim_blobs = unsafe {
             std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
         };
-        draw_slime_at_rect(state.rect, anim_blobs, state.texture, curr_time);
+        draw_slime_at_rect(state.rect, anim_blobs, state.texture, state.curr_time);
 
         let rect_pos = format! {
             "rect: [{x}, {y}]",
