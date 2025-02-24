@@ -26,6 +26,7 @@ pub struct Enemy {
 
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
 // are in the webhacks::State.
+
 #[repr(C, align(4))]
 #[derive(Clone)]
 pub struct State {
@@ -50,6 +51,9 @@ pub struct State {
     pub enemies_arr: *mut Enemy,
 }
 
+// statically check that the State struct is the same size as the C struct
+// this is important because we're going to be passing this struct back and forth between Rust and C
+
 #[no_mangle]
 pub fn get_state_size() -> usize {
     std::mem::size_of::<State>()
@@ -61,7 +65,6 @@ pub fn game_init() -> State {
     // between the frames and we don't really want to dig down to the GLFW layer and poll for events ourselves.
     // See: https://github.com/raysan5/raylib/issues/3354
     // Apparently this is known and solutions are unplanned. I guess it's not that much of a problem from C.
-
     // SetTargetFPS(300);
 
     raylib::init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
@@ -75,11 +78,6 @@ pub fn game_init() -> State {
     webhacks::play_music_stream(music);
 
     let font = webhacks::load_font("assets/Kavoon-Regular.ttf");
-
-    // Load slime texture
-    // Blue_Slime-Idle-mag.png
-    // webhacks::log("loading texture from rust".to_string());
-    // let image = raylib::LoadImage(cstr!("assets/Blue_Slime-Idle-mag.png"));
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
     let path_points: Vec<Vector2> = vec![
@@ -126,16 +124,9 @@ pub fn game_init() -> State {
 }
 
 fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
-    // webhacks::log("clone_to_malloced".to_string());
     let n = vec.len().try_into().unwrap();
-    // webhacks::log(format!(
-    //     "clone_to_malloced: {:?}, {:?}",
-    //     std::mem::size_of::<T>(),
-    //     n
-    // ));
     let vec_mem_size = std::mem::size_of::<T>() * vec.len();
     let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
-    // webhacks::log(format!("malloc: {}, {:?}", vec_mem_size, layout));
     let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
 
     for (i, item) in vec.iter().enumerate() {
@@ -149,23 +140,14 @@ fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
 
 #[allow(dead_code)]
 fn free_malloced_array<T>(len: u32, ptr: *mut T) {
-    // webhacks::log(format!("free_malloced_array: {}, {:?}", len, ptr));
     let size = std::mem::size_of::<T>() * len as usize;
     let maybe_layout = std::alloc::Layout::from_size_align(size, 4);
     if maybe_layout.is_err() {
-        // webhacks::log("free_malloced_array: layout error".to_string());
         return;
     }
     let layout = maybe_layout.unwrap();
-    // webhacks::log("free_malloced_array _ptr".to_string());
     let _ptr = ptr as *mut u8;
-    // webhacks::log("free_malloced_array dealloc".to_string());
-    // webhacks::log(format!(
-    //     "free_malloced_array dealloc: {:?}, {:?}",
-    //     layout, _ptr
-    // ));
     unsafe { std::alloc::dealloc(_ptr, layout) }
-    // webhacks::log("free_malloced_array done".to_string());
 }
 
 pub type GameLoad = fn(state: &mut State);
@@ -183,13 +165,11 @@ pub fn game_load(state: &mut State) {
 
     // check if the music is loaded
     if !webhacks::is_music_loaded(state.music) {
-        // webhacks::log("music not loaded".to_string());
         any_not_loaded = true;
     }
 
     // check if the font is loaded
     if !webhacks::is_font_loaded(state.font) {
-        // webhacks::log("font not loaded".to_string());
         any_not_loaded = true;
     }
 
@@ -205,7 +185,6 @@ pub fn game_load(state: &mut State) {
         }
 
         if !webhacks::is_texture_loaded(state.texture) {
-            // webhacks::log("texture not loaded".to_string());
             any_not_loaded = true;
         }
     }
@@ -224,9 +203,6 @@ pub fn game_load(state: &mut State) {
         state.anim_blobs_n = anim_blobs_n;
 
         webhacks::unload_image(state.image); // we don't need the image anymore    }
-
-        webhacks::log(format!("current time: {}", state.curr_time));
-        webhacks::log(format!("pre time: {}", state.prev_time));
     }
 }
 
@@ -274,7 +250,7 @@ fn handle_keys(state: &mut State) {
 }
 
 fn handle_mouse(state: &mut State) {
-    let mut mouse_pos = unsafe { raylib::GetMousePosition() };
+    let mut mouse_pos = webhacks::get_mouse_position();
     let is_outside = mouse_pos.x < 0.0
         || mouse_pos.y < 0.0
         || mouse_pos.x > WINDOW_WIDTH as f32
@@ -322,7 +298,6 @@ fn draw_slime_at_rect(
 }
 
 fn process_enemies(state: &mut State) {
-    // webhacks::log("processing enemies".to_string());
     let mut new_enemies: Vec<Enemy> = if state.enemies_arr.is_null() {
         // we don't have any enemies yet
         vec![]
@@ -499,7 +474,6 @@ pub unsafe fn game_over() {
 #[cfg(feature = "web")]
 #[no_mangle]
 pub fn from_js_malloc(size: usize) -> *mut u8 {
-    // webhacks::log(format!("malloc: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::alloc(layout) }
 }
@@ -507,7 +481,6 @@ pub fn from_js_malloc(size: usize) -> *mut u8 {
 #[cfg(feature = "web")]
 #[no_mangle]
 pub fn from_js_free(ptr: *mut u8, size: usize) {
-    // webhacks::log(format!("free: {}", size));
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
 }

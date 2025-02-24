@@ -401,3 +401,7 @@ pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color:
 pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
     unsafe { raylib::DrawCircle(mouse_pos.x as i32, mouse_pos.y as i32, radius, color) }
 }
+
+pub fn get_mouse_position() -> Vector2 {
+    unsafe { raylib::GetMousePosition() }
+}
