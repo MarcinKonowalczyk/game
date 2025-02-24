@@ -459,6 +459,12 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         UpdateMusicStream: (_audio_id) => {
             tryToPlayAudio();
         },
+        SetMusicVolume: (_audio_id, volume) => {
+            if (audio.loop === undefined) {
+                return;
+            }
+            audio.loop.volume(volume);
+        },
         // pub fn LoadImage(file_path: *const i8) -> u32;
         LoadImage: (file_path_ptr) => {
             const buffer = WF.memory.buffer;
@@ -561,7 +567,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.stroke();
             CTX.closePath();
             CTX.lineWidth = 1;
-        }
+        },
+        IsKeyPressed: (key) => CURR_PRESSED_KEY.has(key) && !PREV_PRESSED_KEY.has(key),
     })
 }).then(w => {
     WASM = w;
@@ -597,6 +604,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           [f{x}f{y}]*{path}
           f{path_length}
           [fffffb]*{enemies}
+          b{mute}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);

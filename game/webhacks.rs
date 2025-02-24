@@ -84,6 +84,8 @@ pub mod ffi {
             thickness: f32,
             color: *const Color,
         );
+        pub fn SetMusicVolume(music: Music, volume: f32);
+        pub fn IsKeyPressed(key: i32) -> bool;
     }
 }
 
@@ -404,4 +406,26 @@ pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
 
 pub fn get_mouse_position() -> Vector2 {
     unsafe { raylib::GetMousePosition() }
+}
+
+pub fn set_music_volume(music: Music, volume: f32) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetMusicVolume(music, volume);
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetMusicVolume(music, volume);
+    }
+}
+
+pub fn is_key_pressed(key: raylib::KeyboardKey) -> bool {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::IsKeyPressed(key as i32)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::IsKeyPressed(key)
+    }
 }

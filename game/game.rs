@@ -24,6 +24,11 @@ pub struct Enemy {
     pub dead: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct Turret {
+    pub position: f32, // position along the path in pixels
+}
+
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
 // are in the webhacks::State.
 
@@ -49,6 +54,9 @@ pub struct State {
     pub path_length: f32,
     pub enemies_n: u32,
     pub enemies_arr: *mut Enemy,
+    pub mute: bool,
+    // pub turrets_n: u32,
+    // pub turrets_arr: *mut Turret,
 }
 
 // statically check that the State struct is the same size as the C struct
@@ -81,6 +89,7 @@ pub fn game_init() -> State {
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
     let path_points: Vec<Vector2> = vec![
+        Vector2 { x: 0.0, y: 100.0 },
         Vector2 { x: 100.0, y: 100.0 },
         Vector2 { x: 100.0, y: 200.0 },
         Vector2 { x: 300.0, y: 300.0 },
@@ -120,6 +129,7 @@ pub fn game_init() -> State {
         path_length: path_length,
         enemies_n: 0,
         enemies_arr: std::ptr::null_mut(),
+        mute: true,
     }
 }
 
@@ -203,6 +213,12 @@ pub fn game_load(state: &mut State) {
         state.anim_blobs_n = anim_blobs_n;
 
         webhacks::unload_image(state.image); // we don't need the image anymore    }
+
+        if state.mute {
+            webhacks::set_music_volume(state.music, 0.0);
+        } else {
+            webhacks::set_music_volume(state.music, 1.0);
+        }
     }
 }
 
@@ -246,6 +262,12 @@ fn handle_keys(state: &mut State) {
         state.rect.y = -state.rect.height;
     } else if state.rect.y > WINDOW_HEIGHT as f32 {
         state.rect.y = WINDOW_HEIGHT as f32;
+    }
+
+    // if raylib::IsKeyPressed(KEY::M) {
+    if webhacks::is_key_pressed(KEY::M) {
+        state.mute = !state.mute;
+        webhacks::set_music_volume(state.music, if state.mute { 0.0 } else { 1.0 });
     }
 }
 
@@ -436,8 +458,22 @@ pub fn game_frame(state: &mut State) {
         };
         webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
 
-        let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
+        // Draw the music indicator in the top right corner
+        webhacks::draw_text(
+            state.font,
+            if state.mute {
+                "sound: off"
+            } else {
+                "sound: on"
+            },
+            WINDOW_WIDTH - 105,
+            10,
+            20,
+            RAYWHITE,
+        );
 
+        // Draw the mouse
+        let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
         webhacks::draw_circle(state.mouse_pos, 10.0, color);
 
         // Draw the path
@@ -452,6 +488,7 @@ pub fn game_frame(state: &mut State) {
         // Draw the enemies
         draw_enemies(state);
     }
+
     unsafe { raylib::EndDrawing() };
 
     // Update the music stream
