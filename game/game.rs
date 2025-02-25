@@ -1,4 +1,5 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE, RED};
+use raylib_wasm::PINK;
 use raylib_wasm::{self as raylib, BEIGE, BLUE};
 
 mod anim;
@@ -30,7 +31,7 @@ pub struct Enemy {
 
 #[derive(Clone, Debug)]
 pub struct Turret {
-    pub position: f32, // position along the path in pixels
+    pub position: Vector2, // position along the path in pixels
 }
 
 // All of the state that we need to keep track of in the game. The bits which are different for native and web
@@ -45,7 +46,8 @@ pub struct State {
     pub frame_count: u32,
     pub rect: Rectangle,
     pub mouse_pos: Vector2,
-    pub mouse_btn: u32,
+    pub mouse_btn: bool,
+    pub mouse_btn_pressed: bool,
     pub music: webhacks::Music,
     pub font: webhacks::Font,
     pub image: webhacks::Image,
@@ -136,7 +138,8 @@ pub fn game_init() -> State {
             height: 100.0,
         },
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
-        mouse_btn: 0,
+        mouse_btn: false,
+        mouse_btn_pressed: false,
         music: music,
         font: font,
         image: image,
@@ -156,6 +159,11 @@ pub fn game_init() -> State {
 
 fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
     let n = vec.len().try_into().unwrap();
+
+    if n == 0 {
+        return (0, std::ptr::null_mut());
+    }
+
     let vec_mem_size = std::mem::size_of::<T>() * vec.len();
     let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
     let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
@@ -302,7 +310,8 @@ fn handle_mouse(state: &mut State) {
         mouse_pos = Vector2 { x: -1.0, y: -1.0 };
     }
     state.mouse_pos = mouse_pos;
-    state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32;
+    state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
+    state.mouse_btn_pressed = webhacks::is_mouse_button_pressed(MouseButton::Left as i32);
 }
 
 fn draw_slime_at_rect(
@@ -396,6 +405,34 @@ fn process_enemies(state: &mut State) {
     state.enemies_arr = enemies_arr;
 }
 
+fn process_turrets(state: &mut State) {
+    let mut turrets: Vec<Turret> = if state.turrets_arr.is_null() {
+        // we don't have any turrets yet
+        vec![]
+    } else {
+        unsafe { std::slice::from_raw_parts(state.turrets_arr, state.turrets_n as usize) }.to_vec()
+    };
+
+    if state.mouse_btn_pressed {
+        println!("mouse button pressed");
+        // spawn a new turret
+        let new_turret = Turret {
+            position: state.mouse_pos,
+        };
+
+        turrets.push(new_turret);
+    }
+
+    // update the state
+    if !state.turrets_arr.is_null() {
+        free_malloced_array(state.turrets_n, state.turrets_arr);
+    }
+    let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
+
+    state.turrets_n = turrets_n;
+    state.turrets_arr = turrets_arr;
+}
+
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
     // path_pos in pixels
 
@@ -425,8 +462,15 @@ fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
 }
 
 fn draw_enemies(state: &State) {
-    let enemies =
-        unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) };
+    let enemies = if state.enemies_arr.is_null() {
+        vec![]
+    } else {
+        unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) }.to_vec()
+    };
+
+    if enemies.is_empty() {
+        return;
+    }
 
     let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
 
@@ -434,6 +478,22 @@ fn draw_enemies(state: &State) {
         let pos = path_pos_to_screen_pos(enemy.position, path);
 
         webhacks::draw_circle(pos, 10.0, BEIGE);
+    }
+}
+
+fn draw_turrets(state: &State) {
+    let turrets = if state.turrets_arr.is_null() {
+        vec![]
+    } else {
+        unsafe { std::slice::from_raw_parts(state.turrets_arr, state.turrets_n as usize) }.to_vec()
+    };
+
+    if turrets.is_empty() {
+        return;
+    }
+
+    for turret in turrets.iter() {
+        webhacks::draw_circle(turret.position, 10.0, PINK);
     }
 }
 
@@ -448,6 +508,7 @@ pub fn game_frame(state: &mut State) {
     handle_mouse(state);
 
     process_enemies(state);
+    process_turrets(state);
 
     unsafe { raylib::BeginDrawing() };
 
@@ -488,7 +549,7 @@ pub fn game_frame(state: &mut State) {
         );
 
         // Draw the mouse
-        let color = if state.mouse_btn == 1 { RED } else { RAYWHITE };
+        let color = if state.mouse_btn { RED } else { RAYWHITE };
         webhacks::draw_circle(state.mouse_pos, 10.0, color);
 
         // Draw the path
@@ -502,6 +563,7 @@ pub fn game_frame(state: &mut State) {
 
         // Draw the enemies
         draw_enemies(state);
+        draw_turrets(state);
     }
 
     unsafe { raylib::EndDrawing() };

@@ -36,8 +36,8 @@ pub mod ffi {
         pub fn PlayMusicStream(music: Music);
         pub fn UpdateMusicStream(music: Music);
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
-        // pub fn IsMusicReady(music: u32) -> bool;
         pub fn IsMouseButtonDown(button: i32) -> bool;
+        pub fn IsMouseButtonPressed(button: i32) -> bool;
         pub fn ConsoleLog(msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
         pub fn DrawTextEx(
@@ -49,8 +49,6 @@ pub mod ffi {
             spacing: f32,
             tint: *const Color,
         );
-        // pub fn LoadTexture(file_path: *const i8) -> u32;
-        // #[no_mangle]
         pub fn LoadTexture(file_path: *const i8) -> Texture;
         pub fn GetTextureShape(texture: Texture, vector: *mut Vector2);
         pub fn DrawTextureEx(
@@ -181,6 +179,17 @@ pub fn is_mouse_button_down(button: i32) -> bool {
     #[cfg(feature = "native")]
     unsafe {
         raylib::IsMouseButtonDown(button)
+    }
+}
+
+pub fn is_mouse_button_pressed(button: i32) -> bool {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::IsMouseButtonPressed(button)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::IsMouseButtonPressed(button)
     }
 }
 

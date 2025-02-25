@@ -33,27 +33,55 @@ function make_environment(...envs) {
     });
 }
 
-let PREV_PRESSED_KEY = new Set();
-let CURR_PRESSED_KEY = new Set();
-
-const keyDown = (e) => {
-    e.preventDefault();
-    CURR_PRESSED_KEY.add(GLFW_MAP[e.code]);
-}
-
-const keyUp = (e) => {
-    e.preventDefault();
-    CURR_PRESSED_KEY.delete(GLFW_MAP[e.code]);
-}
 
 const GAME = document.getElementById("game");
 var CONTAINER = GAME.parentElement; // parent div
 const CTX = GAME.getContext("2d");
 
+GAME.keys_state = new Set();
+GAME.prev_keys_state = new Set();
+
+// const keyDown = (e) => {
+//     e.preventDefault();
+//     CURR_PRESSED_KEY.add(GLFW_MAP[e.code]);
+// }
+
+// const keyUp = (e) => {
+//     e.preventDefault();
+//     CURR_PRESSED_KEY.delete(GLFW_MAP[e.code]);
+// }
+
+// pub enum MouseButton {
+//     /// Mouse button left
+//     Left = 0,
+//     /// Mouse button right
+//     Right = 1,
+//     /// Mouse button middle (pressed wheel)
+//     Middle = 2,
+//     /// Mouse button side (advanced mouse device)
+//     Side = 3,
+//     /// Mouse button extra (advanced mouse device)
+//     Extra = 4,
+//     /// Mouse button forward (advanced mouse device)
+//     Forward = 5,
+//     /// Mouse button back (advanced mouse device)
+//     Back = 6,
+// }
+
+let MOUSE_MAP = {
+    "Left": 0,
+    "Right": 1,
+    "Middle": 2, // pressed wheel
+    "Side": 3, // advanced mouse device
+    "Extra": 4, // advanced mouse device
+    "Forward": 5, // advanced mouse device
+    "Back": 6, // advanced mouse device
+}
+
 GAME.mouseX = -1;
 GAME.mouseY = -1;
-GAME.mouseDown = false;
-GAME.mouseButton = -1;
+GAME.mouse_state = new Array(7).fill(false);
+GAME.prev_mouse_state = new Array(7).fill(false);
 
 GAME.onmousemove = handleMouseMove;
 
@@ -66,31 +94,32 @@ function handleMouseMove(event) {
 }
 
 GAME.onmouseleave = function (event) {
-    // console.log("mouse leave");
     GAME.mouseX = -1;
     GAME.mouseY = -1;
 }
 
 GAME.onmousedown = function (event) {
-    // console.log("mouse down");
-    GAME.mouseDown = true;
-    GAME.mouseButton = event.button;
+    GAME.mouse_state[event.button] = true;
 }
 
 GAME.onmouseup = function (event) {
-    // console.log("mouse up");
-    GAME.mouseDown = false;
-    GAME.mouseButton = -1;
+    GAME.mouse_state[event.button] = false;
 }
 
 GAME.oncontextmenu = function (event) {
-    // console.log("right click");
     event.preventDefault();
 }
 
-// game.onmouseenter = function (event) {
-//     console.log("mouse enter");
-// }
+window.onkeydown = function (event) {
+    event.preventDefault();
+    GAME.keys_state.add(event.keyCode);
+}
+
+window.onkeyup = function (event) {
+    event.preventDefault();
+    GAME.keys_state.delete(event.keyCode);
+}
+
 
 var SCALE_TO_FIT = true;
 var WIDTH = 800;
@@ -120,7 +149,8 @@ function onResize() {
     CONTAINER.style.top = Math.floor((window.innerHeight - h) / 2) + "px";
     CONTAINER.style.left = Math.floor((window.innerWidth - w) / 2) + "px";
 }
-window.addEventListener('resize', onResize);
+
+window.onresize = onResize;
 
 onResize();
 
@@ -170,17 +200,11 @@ let TARGET_FPS = undefined;
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
-        ConsoleLog(text_ptr) {
-            const buffer = WF.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            console.log(text);
-        },
+        ConsoleLog: (text_ptr) => console.log(getString(WF.memory.buffer, text_ptr)),
         GetMousePositionX: () => GAME.mouseX,
         GetMousePositionY: () => GAME.mouseY,
-        IsMouseButtonDown: (button) => {
-            // console.log(button, game.mouseButton);
-            return GAME.mouseButton === button;
-        },
+        IsMouseButtonDown: (button) => GAME.mouse_state[button],
+        IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
         InitWindow: (w, h, t) => {
             GAME.width = w;
             GAME.height = h;
@@ -188,14 +212,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             document.title = getString(buffer, t);
         },
         BeginDrawing: () => { },
-        SetExitKey: () => { },
         CloseWindow: () => { },
-        EndDrawing: () => {
-            PREV_PRESSED_KEY.clear();
-            PREV_PRESSED_KEY = new Set(CURR_PRESSED_KEY);
-        },
-        IsKeyReleased: (key) => PREV_PRESSED_KEY.has(key) && !CURR_PRESSED_KEY.has(key),
-        IsKeyDown: (key) => CURR_PRESSED_KEY.has(key),
+        EndDrawing: () => { },
+        IsKeyDown: (key) => GAME.keys_state.has(key),
+        IsKeyPressed: (key) => GAME.keys_state.has(key) && !GAME.prev_keys_state.has(key),
+        IsKeyReleased: (key) => GAME.prev_keys_state.has(key) && !GAME.keys_state.has(key),
         ClearBackground: (color_ptr) => {
             const buffer = WF.memory.buffer;
             const color = getColor(buffer, color_ptr);
@@ -367,14 +388,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             vector[0] = img.width;
             vector[1] = img.height;
         },
-        // pub fn DrawTextureEx_(
-        //     texture: Texture,
-        //     positionX: i32,
-        //     positionY: i32,
-        //     rotation: f32,
-        //     scale: f32,
-        //     tint: *const Color,
-        // );
         DrawTextureEx: (id, x, y, rotation, scale, _color_ptr) => {
             const img = TEXTURES[id];
             CTX.save();
@@ -384,14 +397,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.drawImage(img, 0, 0);
             CTX.restore();
         },
-        // pub fn DrawTexturePro_(
-        //     texture: Texture,
-        //     sourceRec: raylib::Rectangle,
-        //     destRec: raylib::Rectangle,
-        //     origin: raylib::Vector2,
-        //     rotation: f32,
-        //     tint: *const Color,
-        // );
         DrawTexturePro: (id, sourceRec_ptr, destRec_ptr) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
@@ -405,15 +410,18 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         GetScreenWidth: () => CTX.canvas.width,
         GetScreenHeight: () => CTX.canvas.height,
         GetFrameTime: () => {
-            if (TARGET_FPS !== undefined) {
-                return Math.min(DT, 1.0 / TARGET_FPS);
-            }
+            if (TARGET_FPS !== undefined) return Math.min(DT, 1.0 / TARGET_FPS);
+            if (DT === undefined) return 0.0;
             return DT;
         },
         IsWindowResized: () => false,
         WindowShouldClose: () => false,
         SetTargetFPS: (x) => TARGET_FPS = x,
-        GetFPS: () => 1.0 / DT,
+        // GetFPS: () => 1.0 / DT,
+        GetFPS: () => {
+            if (DT === undefined) return 0.0;
+            return 1.0 / DT;
+        },
         // DrawFPS: (x, y) => {
         //     const fontSize = 50.0 * FONT_SCALE_MAGIC;
         //     const fps = GetFPS();
@@ -424,11 +432,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         //     ctx.font = `${fontSize}px grixel`;
         //     ctx.fillText(targetFPS, x, y + fontSize);
         // },
-        alert: (ptr) => {
-            let msg = getString(ptr);
-            console.log(msg);
-            window.alert(msg);
-        },
+        // alert: (ptr) => {
+        //     let msg = getString(ptr);
+        //     console.log(msg);
+        //     window.alert(msg);
+        // },
         InitAudioDevice: () => { },
         LoadMusicStream: (file_path_ptr) => {
             const buffer = WF.memory.buffer;
@@ -568,15 +576,14 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.closePath();
             CTX.lineWidth = 1;
         },
-        IsKeyPressed: (key) => CURR_PRESSED_KEY.has(key) && !PREV_PRESSED_KEY.has(key),
     })
 }).then(w => {
     WASM = w;
     WF = w.instance.exports;
     // console.log(w);
 
-    window.addEventListener("keydown", keyDown);
-    window.addEventListener("keyup", keyUp);
+    // window.addEventListener("keydown", keyDown);
+    // window.addEventListener("keyup", keyUp);
 
     let state = WF.game_init();
 
@@ -632,6 +639,11 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
                 console.log(parse_state(state, n_state_size));
             }
         }
+
+        // state history between frames
+        GAME.prev_mouse_state = GAME.mouse_state.slice();
+        GAME.prev_keys_state = new Set(GAME.keys_state);
+
         // log last element of state
         // let parsed_state = parse_state(state, n_state_size);
         // let dt = parsed_state.curr_time - parsed_state.prev_time;
