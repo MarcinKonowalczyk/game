@@ -175,7 +175,7 @@ pub fn game_init() -> State {
             width: 100.0,
             height: 100.0,
         },
-        mouse_pos: Vector2 { x: 0.0, y: 0.0 },
+        mouse_pos: Vector2::new(0.0, 0.0),
         mouse_btn: false,
         mouse_btn_pressed: false,
         music: music,
@@ -345,7 +345,7 @@ fn handle_mouse(state: &mut State) {
         || mouse_pos.x > WINDOW_WIDTH as f32
         || mouse_pos.y > WINDOW_HEIGHT as f32;
     if is_outside {
-        mouse_pos = Vector2 { x: -1.0, y: -1.0 };
+        mouse_pos = Vector2::new(-1.0, -1.0);
     }
     state.mouse_pos = mouse_pos;
     state.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
@@ -358,10 +358,7 @@ fn draw_slime_at_rect(
     texture: webhacks::Texture,
     time: f32,
 ) {
-    let mut position = Vector2 {
-        x: rect.x,
-        y: rect.y,
-    };
+    let mut position = Vector2::new(rect.x, rect.y);
 
     // figure out how to scale the texture to the size of the rect
     let shape = webhacks::get_texture_shape(texture);
@@ -449,22 +446,13 @@ fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
         let p2 = path[i];
         let segment_length = p1.dist(p2);
         if current_path_length + segment_length >= path_pos {
-            // we've found the segment that contains the position
             let segment_pos = (path_pos - current_path_length) / segment_length;
-            let dx = p2.x - p1.x;
-            let dy = p2.y - p1.y;
-            return Vector2 {
-                x: p1.x + dx * segment_pos,
-                y: p1.y + dy * segment_pos,
-            };
+            return p1.lerp(p2, segment_pos);
         }
         current_path_length += segment_length;
     }
 
-    Vector2 {
-        x: path[path.len() - 1].x,
-        y: path[path.len() - 1].y,
-    }
+    path[path.len() - 1]
 }
 
 fn draw_enemies(state: &State) {

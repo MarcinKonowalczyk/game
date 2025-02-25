@@ -27,6 +27,10 @@ pub trait Vector2Ext {
     fn div(&self, other: Vector2) -> Vector2;
 
     fn dot(&self, other: Vector2) -> f32;
+
+    fn lerp(&self, other: Vector2, t: f32) -> Vector2 {
+        self.muls(1.0 - t).add(other.muls(t))
+    }
 }
 
 impl Vector2Ext for Vector2 {
