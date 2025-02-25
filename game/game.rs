@@ -1,9 +1,13 @@
-use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, Vector2, DARKGREEN, RAYWHITE, RED};
-use raylib_wasm::{self as raylib, BEIGE};
+use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE, RED};
+use raylib_wasm::{self as raylib, BEIGE, BLUE};
 
 mod anim;
 mod defer;
+mod vec2_ext;
 mod webhacks;
+
+use crate::vec2_ext::Vector2;
+use crate::vec2_ext::Vector2Ext;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -40,7 +44,6 @@ pub struct State {
     pub prev_time: f32,
     pub frame_count: u32,
     pub rect: Rectangle,
-    pub speed: f32,
     pub mouse_pos: Vector2,
     pub mouse_btn: u32,
     pub music: webhacks::Music,
@@ -55,8 +58,8 @@ pub struct State {
     pub enemies_n: u32,
     pub enemies_arr: *mut Enemy,
     pub mute: bool,
-    // pub turrets_n: u32,
-    // pub turrets_arr: *mut Turret,
+    pub turrets_n: u32,
+    pub turrets_arr: *mut Turret,
 }
 
 // statically check that the State struct is the same size as the C struct
@@ -65,6 +68,36 @@ pub struct State {
 #[no_mangle]
 pub fn get_state_size() -> usize {
     std::mem::size_of::<State>()
+}
+
+fn make_path_points() -> (Vec<Vector2>, f32) {
+    let w = WINDOW_WIDTH as f32;
+    let h = WINDOW_HEIGHT as f32;
+    let p = 80.0;
+    let d = 150.0;
+
+    let path_points = vec![
+        Vector2::new(0.0, p),
+        Vector2::new(p, p),
+        Vector2::new(p, p + d),
+        Vector2::new(w - p - d, p + d),
+        Vector2::new(w - p - d, p),
+        Vector2::new(w - p, p),
+        Vector2::new(w - p, h - p),
+        Vector2::new(p + d, h - p),
+        Vector2::new(p + d, h - p - d),
+        Vector2::new(p, h - p - d),
+        Vector2::new(p, h - p),
+    ];
+
+    let path_length = path_points
+        .iter()
+        .fold((0.0, path_points[0]), |(acc, prev), &p| {
+            (acc + prev.dist(p), p)
+        })
+        .0;
+
+    (path_points, path_length)
 }
 
 #[no_mangle]
@@ -88,20 +121,7 @@ pub fn game_init() -> State {
     let font = webhacks::load_font("assets/Kavoon-Regular.ttf");
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
-    let path_points: Vec<Vector2> = vec![
-        Vector2 { x: 0.0, y: 100.0 },
-        Vector2 { x: 100.0, y: 100.0 },
-        Vector2 { x: 100.0, y: 200.0 },
-        Vector2 { x: 300.0, y: 300.0 },
-    ];
-
-    let path_length = path_points
-        .iter()
-        .fold((0.0, path_points[0]), |(acc, prev), &p| {
-            (acc + pp_distance2(prev, p).sqrt(), p)
-        })
-        .0;
-
+    let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(path_points);
 
     State {
@@ -115,7 +135,6 @@ pub fn game_init() -> State {
             width: 100.0,
             height: 100.0,
         },
-        speed: 850.0,
         mouse_pos: Vector2 { x: 0.0, y: 0.0 },
         mouse_btn: 0,
         music: music,
@@ -130,6 +149,8 @@ pub fn game_init() -> State {
         enemies_n: 0,
         enemies_arr: std::ptr::null_mut(),
         mute: true,
+        turrets_n: 0,
+        turrets_arr: std::ptr::null_mut(),
     }
 }
 
@@ -228,13 +249,13 @@ fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> u32 {
 }
 
 fn handle_keys(state: &mut State) {
-    unsafe {
+    let speed = unsafe {
         if raylib::IsKeyDown(KEY::Space) {
-            state.speed = SPEED_BOOSTED
+            SPEED_BOOSTED
         } else {
-            state.speed = SPEED_DEFAULT
+            SPEED_DEFAULT
         }
-    }
+    };
 
     let dt = unsafe { raylib::GetFrameTime() };
 
@@ -246,10 +267,10 @@ fn handle_keys(state: &mut State) {
         d = raylib::IsKeyDown(KEY::D);
     }
 
-    state.rect.y -= dt * state.speed * (w as i32 as f32);
-    state.rect.y += dt * state.speed * (s as i32 as f32);
-    state.rect.x -= dt * state.speed * (a as i32 as f32);
-    state.rect.x += dt * state.speed * (d as i32 as f32);
+    state.rect.y -= dt * speed * (w as i32 as f32);
+    state.rect.y += dt * speed * (s as i32 as f32);
+    state.rect.x -= dt * speed * (a as i32 as f32);
+    state.rect.x += dt * speed * (d as i32 as f32);
 
     // prevent the rect from wandering off the screen too far
     if state.rect.x < -state.rect.width {
@@ -375,12 +396,6 @@ fn process_enemies(state: &mut State) {
     state.enemies_arr = enemies_arr;
 }
 
-fn pp_distance2(p1: Vector2, p2: Vector2) -> f32 {
-    let dx = p1.x - p2.x;
-    let dy = p1.y - p2.y;
-    dx * dx + dy * dy
-}
-
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
     // path_pos in pixels
 
@@ -389,7 +404,7 @@ fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
     for i in 1..path.len() {
         let p1 = path[i - 1];
         let p2 = path[i];
-        let segment_length = pp_distance2(p1, p2).sqrt();
+        let segment_length = p1.dist(p2);
         if current_path_length + segment_length >= path_pos {
             // we've found the segment that contains the position
             let segment_pos = (path_pos - current_path_length) / segment_length;
@@ -437,7 +452,7 @@ pub fn game_frame(state: &mut State) {
     unsafe { raylib::BeginDrawing() };
 
     {
-        unsafe { raylib::ClearBackground(DARKGREEN) };
+        unsafe { raylib::ClearBackground(BLUE) };
 
         let anim_blobs = unsafe {
             std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)

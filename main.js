@@ -593,7 +593,6 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           f{prev_time}
           u{frame_count}
           [f{x}f{y}f{width}f{height}]{rect}
-          f{speed}
           [f{x}f{y}]{mouse_pos}
           b{mouse_btn}
           u{music}
