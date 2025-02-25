@@ -64,6 +64,44 @@ pub struct State {
     pub turrets_arr: *mut Turret,
 }
 
+impl State {
+    fn get_turrets_vec(&self) -> Vec<Turret> {
+        if self.turrets_arr.is_null() {
+            vec![]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) }
+                .to_vec()
+        }
+    }
+
+    fn set_turrets_vec(&mut self, turrets: Vec<Turret>) {
+        if !self.turrets_arr.is_null() {
+            free_malloced(self.turrets_n, self.turrets_arr);
+        }
+        let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
+        self.turrets_n = turrets_n;
+        self.turrets_arr = turrets_arr;
+    }
+
+    fn get_enemies_vec(&self) -> Vec<Enemy> {
+        if self.enemies_arr.is_null() {
+            vec![]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) }
+                .to_vec()
+        }
+    }
+
+    fn set_enemies_vec(&mut self, enemies: Vec<Enemy>) {
+        if !self.enemies_arr.is_null() {
+            free_malloced(self.enemies_n, self.enemies_arr);
+        }
+        let (enemies_n, enemies_arr) = clone_to_malloced(enemies);
+        self.enemies_n = enemies_n;
+        self.enemies_arr = enemies_arr;
+    }
+}
+
 // statically check that the State struct is the same size as the C struct
 // this is important because we're going to be passing this struct back and forth between Rust and C
 
@@ -178,7 +216,7 @@ fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
 }
 
 #[allow(dead_code)]
-fn free_malloced_array<T>(len: u32, ptr: *mut T) {
+fn free_malloced<T>(len: u32, ptr: *mut T) {
     let size = std::mem::size_of::<T>() * len as usize;
     let maybe_layout = std::alloc::Layout::from_size_align(size, 4);
     if maybe_layout.is_err() {
@@ -350,24 +388,13 @@ fn draw_slime_at_rect(
 }
 
 fn process_enemies(state: &mut State) {
-    let mut new_enemies: Vec<Enemy> = if state.enemies_arr.is_null() {
-        // we don't have any enemies yet
-        vec![]
-    } else {
-        let enemies =
-            unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) };
-
-        enemies.to_vec()
-    };
+    let mut enemies = state.get_enemies_vec();
 
     // remove all the dead enemies from the list
     // these will be the ones which were marked as dead in the previous frame
-    new_enemies = new_enemies
-        .into_iter()
-        .filter(|enemy| !enemy.dead)
-        .collect();
+    enemies = enemies.into_iter().filter(|enemy| !enemy.dead).collect();
 
-    let last_enemy = new_enemies.last();
+    let last_enemy = enemies.last();
 
     // spawn a new enemy every second
     if last_enemy.is_none() || state.curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
@@ -380,57 +407,36 @@ fn process_enemies(state: &mut State) {
             last_hit_time: state.curr_time,
             dead: false,
         };
-        new_enemies.push(new_enemy);
+        enemies.push(new_enemy);
     }
 
     // move the enemies along the path
     let dt = state.curr_time - state.prev_time;
-    for enemy in new_enemies.iter_mut() {
+    for enemy in enemies.iter_mut() {
         enemy.position += SPEED_ENEMY * dt as f32;
     }
 
     // mark enemies that have reached the end of the path as dead
-    for enemy in new_enemies.iter_mut() {
+    for enemy in enemies.iter_mut() {
         if enemy.position >= state.path_length {
             enemy.dead = true;
         }
     }
 
     // update the state
-    if !state.enemies_arr.is_null() {
-        free_malloced_array(state.enemies_n, state.enemies_arr);
-    }
-    let (enemies_n, enemies_arr) = clone_to_malloced(new_enemies);
-    state.enemies_n = enemies_n;
-    state.enemies_arr = enemies_arr;
+    state.set_enemies_vec(enemies);
 }
 
 fn process_turrets(state: &mut State) {
-    let mut turrets: Vec<Turret> = if state.turrets_arr.is_null() {
-        // we don't have any turrets yet
-        vec![]
-    } else {
-        unsafe { std::slice::from_raw_parts(state.turrets_arr, state.turrets_n as usize) }.to_vec()
-    };
+    let mut turrets = state.get_turrets_vec();
 
     if state.mouse_btn_pressed {
-        println!("mouse button pressed");
-        // spawn a new turret
-        let new_turret = Turret {
+        turrets.push(Turret {
             position: state.mouse_pos,
-        };
-
-        turrets.push(new_turret);
+        });
     }
 
-    // update the state
-    if !state.turrets_arr.is_null() {
-        free_malloced_array(state.turrets_n, state.turrets_arr);
-    }
-    let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
-
-    state.turrets_n = turrets_n;
-    state.turrets_arr = turrets_arr;
+    state.set_turrets_vec(turrets);
 }
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
@@ -462,11 +468,7 @@ fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
 }
 
 fn draw_enemies(state: &State) {
-    let enemies = if state.enemies_arr.is_null() {
-        vec![]
-    } else {
-        unsafe { std::slice::from_raw_parts(state.enemies_arr, state.enemies_n as usize) }.to_vec()
-    };
+    let enemies = state.get_enemies_vec();
 
     if enemies.is_empty() {
         return;
@@ -482,11 +484,7 @@ fn draw_enemies(state: &State) {
 }
 
 fn draw_turrets(state: &State) {
-    let turrets = if state.turrets_arr.is_null() {
-        vec![]
-    } else {
-        unsafe { std::slice::from_raw_parts(state.turrets_arr, state.turrets_n as usize) }.to_vec()
-    };
+    let turrets = state.get_turrets_vec();
 
     if turrets.is_empty() {
         return;
