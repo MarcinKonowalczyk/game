@@ -105,8 +105,76 @@ TESTS.skip_me = () => {
 }
 
 ////////////////////////////////////////
+// Argument parsing
+////////////////////////////////////////
+
+let args = process.argv.slice(2);
+
+function _match_flag(args, flags) {
+    let indices = flags.map(f => args.indexOf(f)).filter(i => i !== -1);
+    if (indices.length === 0) {
+        return -1; // not found
+    } else if (indices.length > 1) {
+        throw `Only one flag is allowed from ${flags}`;
+    }
+    return indices[0];
+}
+
+function match_flag(args, flags) {
+    let index = _match_flag(args, flags);
+    if (index === -1) {
+        return false;
+    }
+    args.splice(index, 1);
+    return true;
+}
+
+function match_flag_and_value(args, flags, default_) {
+    let index = _match_flag(args, flags);
+    if (index === -1) {
+        return default_;
+    }
+    if (index + 1 >= args.length) {
+        throw `Flag ${flags[0]} requires a value`;
+    }
+    let value = args[index + 1];
+    args.splice(index, 2);
+    return value;
+}
+
+let ARGS = {};
+
+try {
+    ARGS.verbose = match_flag(args, ["-v", "--verbose"]);
+    ARGS.filter = match_flag_and_value(args, ["-k", "--filter"], '')
+} catch (e) {
+    console.log(e);
+    process.exit(1);
+}
+
+if (args.length > 0) {
+    console.log("Unknown arguments: ", args);
+    process.exit(1);
+}
+
+
+////////////////////////////////////////
 // Run tests
 ////////////////////////////////////////
+
+if (ARGS.filter !== '') {
+    if (ARGS.verbose) {
+        console.log("Filtering tests with: ", ARGS.filter);
+    }
+
+    let filtered_tests = {};
+    for (let test in TESTS) {
+        if (test.includes(ARGS.filter)) {
+            filtered_tests[test] = TESTS[test];
+        }
+    }
+    TESTS = filtered_tests;
+}
 
 let OUTPUT = [];
 let ASSERTION_NO = 0;
