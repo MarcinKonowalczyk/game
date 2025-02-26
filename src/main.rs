@@ -78,7 +78,7 @@ fn start() {
             game_load = load_fn(&lib, "game_load");
         }
 
-        if state.all_loaded {
+        if state.all_loaded.bool() {
             game_frame(&mut state);
         } else {
             game_load(&mut state);

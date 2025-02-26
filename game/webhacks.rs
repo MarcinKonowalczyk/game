@@ -1,5 +1,6 @@
 use raylib::{cstr, Color, Vector2};
 use raylib_wasm as raylib;
+use std::ops::Not;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
@@ -23,6 +24,63 @@ pub type Font = raylib::Font;
 pub type Texture = u32;
 #[cfg(feature = "native")]
 pub type Texture = raylib::Texture;
+
+// 4-byte bool
+#[derive(Clone, Debug)]
+pub struct Bool {
+    pub value: u32,
+}
+
+impl Not for Bool {
+    type Output = Bool;
+
+    fn not(self) -> Bool {
+        Bool {
+            value: if self.value == 0 { 1 } else { 0 },
+        }
+    }
+}
+
+impl Into<bool> for Bool {
+    fn into(self) -> bool {
+        self.value != 0
+    }
+}
+
+impl Bool {
+    #[allow(non_snake_case)]
+    pub fn True() -> Bool {
+        Bool { value: 1 }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn False() -> Bool {
+        Bool { value: 0 }
+    }
+
+    pub fn bool(&self) -> bool {
+        self.value != 0
+    }
+
+    pub fn toggle(&mut self) {
+        self.value = if self.value == 0 { 1 } else { 0 };
+    }
+}
+
+// #[cfg(feature = "web")]
+// pub type Bool = u32;
+// #[cfg(feature = "native")]
+// pub type Bool = bool;
+
+// #[cfg(feature = "web")]
+// pub const TRUE: Bool = 1;
+// #[cfg(feature = "native")]
+// pub const TRUE: Bool = true;
+
+// #[cfg(feature = "web")]
+// pub const FALSE: Bool = 0;
+// #[cfg(feature = "native")]
+// pub const FALSE: Bool = false;
 
 // All the external functions which we promise to implement on the javascript side
 // Some stuff directly maps to raylib functions, and some stuff does not, and needs
