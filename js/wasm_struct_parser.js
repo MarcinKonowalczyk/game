@@ -11,10 +11,7 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
     }
 
     function _to_struct(data_view, tokens, i_offset) {
-
-        if (i_offset === undefined) {
-            i_offset = 0;
-        }
+        i_offset = i_offset || 0;
 
         var out = [];
         let i = 0; // byte index
@@ -120,13 +117,39 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 // let schema = "u[ffff]f*{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
 
 function parse_until(schema, i, end) {
-    let label = "";
+    let content = "";
     i++;
     while (schema[i] !== end) {
-        label += schema[i];
+        content += schema[i];
         i++;
     }
-    return [label, i];
+    return [content, i];
+}
+
+function parse_until_matching(schema, i, start, end) {
+    let content = "";
+    let depth = 0;
+    while (depth >= 0) {
+        let char = schema[i];
+        if (char === start) {
+            depth++;
+        } else if (char === end) {
+            depth--;
+        }
+        content += char;
+        i++;
+
+        if (i > schema.length) {
+            throw "Unexpected end of schema";
+        }
+    }
+
+    // we've gone too far by one character
+    i--;
+    content = content.slice(0, -1)
+
+    return [content, i];
+
 }
 
 export function* schema_scanner(schema) {
@@ -152,7 +175,7 @@ export function* schema_scanner(schema) {
         } else if (char === "[") {
             out = { type: "struct" };
             var content = "";
-            [content, i] = parse_until(schema, i, "]");
+            [content, i] = parse_until_matching(schema, ++i, "[", "]");
             if (schema[i + 1] === "*") { i++; out.is_array = true; }
             if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
 

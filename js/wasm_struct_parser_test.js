@@ -44,6 +44,22 @@ function yield_token(schema) {
     return tokens[0];
 }
 
+// Helper function to make sure parsing of [f{x}f{y}] struct is correct
+function assert_vec2(token) {
+    assert_eq(token.type, "struct");
+    assert_eq(token.value.length, 2);
+
+    let [x_token, y_token] = token.value;
+
+    assert_eq(x_token.type, "float32");
+    assert_eq(x_token.value, "f");
+    assert_eq(x_token.label, "x");
+
+    assert_eq(y_token.type, "float32");
+    assert_eq(y_token.value, "f");
+    assert_eq(y_token.label, "y");
+}
+
 ////////////////////////////////////////
 // Tests
 ////////////////////////////////////////
@@ -76,18 +92,7 @@ TESTS.boolean = () => {
 TESTS.struct = () => {
     let token = yield_token('[f{x}f{y}]')
 
-    assert_eq(token.type, "struct");
-    assert_eq(token.value.length, 2);
-
-    let [x, y] = token.value;
-
-    assert_eq(x.type, "float32");
-    assert_eq(x.value, "f");
-    assert_eq(x.label, "x");
-
-    assert_eq(y.type, "float32");
-    assert_eq(y.value, "f");
-    assert_eq(y.label, "y");
+    assert_vec2(token);
 }
 
 TESTS.array = () => {
@@ -98,6 +103,19 @@ TESTS.array = () => {
     assert_eq(tokens[0].value, "f");
     assert_eq(tokens[0].label, "speed");
     assert_eq(tokens[0].is_array, true);
+}
+
+TESTS.nested_struct = () => {
+    let tokens = yield_tokens('[[f{x}f{y}][f{x}f{y}]]')
+
+    assert_eq(tokens.length, 1);
+    assert_eq(tokens[0].type, "struct");
+    assert_eq(tokens[0].value.length, 2);
+
+    let [a, b] = tokens[0].value;
+
+    assert_vec2(a);
+    assert_vec2(b);
 }
 
 TESTS.skip_me = () => {
@@ -120,16 +138,18 @@ function _match_flag(args, flags) {
     return indices[0];
 }
 
-function match_flag(args, flags) {
+function match_flag(args, flags, default_) {
+    default_ == default_ || false;
     let index = _match_flag(args, flags);
     if (index === -1) {
-        return false;
+        return default_;
     }
     args.splice(index, 1);
-    return true;
+    return !default_;
 }
 
 function match_flag_and_value(args, flags, default_) {
+    default_ == default_ || null;
     let index = _match_flag(args, flags);
     if (index === -1) {
         return default_;
@@ -147,16 +167,19 @@ let ARGS = {};
 try {
     ARGS.verbose = match_flag(args, ["-v", "--verbose"]);
     ARGS.filter = match_flag_and_value(args, ["-k", "--filter"], '')
+    ARGS.capture = match_flag(args, ["-s", "--capture=no"], true);
 } catch (e) {
     console.log(e);
     process.exit(1);
 }
 
+// console.log("Arguments: ", ARGS);
+// process.exit(1);
+
 if (args.length > 0) {
     console.log("Unknown arguments: ", args);
     process.exit(1);
 }
-
 
 ////////////////////////////////////////
 // Run tests
@@ -182,7 +205,13 @@ let ASSERTION_NO = 0;
 let LOG = process.stdout.write.bind(process.stdout);
 let _console_log = console.log;
 console.log = function () {
-    OUTPUT.push(Array.from(arguments));
+    if (ARGS.capture) {
+        // capture the output
+        OUTPUT.push(Array.from(arguments));
+    } else {
+        // call the original console.log
+        _console_log.apply(console, arguments);
+    }
 }
 
 const GREEN = '\x1b[32m';
