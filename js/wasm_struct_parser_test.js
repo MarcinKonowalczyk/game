@@ -3,7 +3,7 @@
 import { schema_scanner } from "./wasm_struct_parser.js"
 
 ////////////////////////////////////////
-// Helper functions
+// Test Framework Helper functions
 ////////////////////////////////////////
 
 function assert(condition, message) {
@@ -24,8 +24,10 @@ function skip(reason) {
     throw `Skipped: ${reason}`;
 }
 
+let TESTS = {};
+
 ////////////////////////////////////////
-// Tests
+// Test-specific Helper functions
 ////////////////////////////////////////
 
 function yield_tokens(schema) {
@@ -36,34 +38,66 @@ function yield_tokens(schema) {
     return tokens;
 }
 
-let TESTS = {};
+function yield_token(schema) {
+    let tokens = yield_tokens(schema);
+    assert_eq(tokens.length, 1);
+    return tokens[0];
+}
+
+////////////////////////////////////////
+// Tests
+////////////////////////////////////////
 
 TESTS.f32 = () => {
-    let tokens = yield_tokens('f{time}')
+    let token = yield_token('f{time}')
 
-    assert_eq(tokens.length, 1);
-    assert_eq(tokens[0].type, "float32");
-    assert_eq(tokens[0].value, "f");
-    assert_eq(tokens[0].label, "time");
+    assert_eq(token.type, "float32");
+    assert_eq(token.value, "f");
+    assert_eq(token.label, "time");
 }
 
 TESTS.u32 = () => {
-    let tokens = yield_tokens('u{font}')
+    let token = yield_token('u{font}')
 
-    assert_eq(tokens.length, 1);
-    assert_eq(tokens[0].type, "uint32");
-    assert_eq(tokens[0].value, "u");
-    assert_eq(tokens[0].label, "font");
+    assert_eq(token.type, "uint32");
+    assert_eq(token.value, "u");
+    assert_eq(token.label, "font");
 }
 
 
 TESTS.boolean = () => {
-    let tokens = yield_tokens('b{dead}')
+    let token = yield_token('b{dead}')
+
+    assert_eq(token.type, "bool");
+    assert_eq(token.value, "b");
+    assert_eq(token.label, "dead");
+}
+
+TESTS.struct = () => {
+    let token = yield_token('[f{x}f{y}]')
+
+    assert_eq(token.type, "struct");
+    assert_eq(token.value.length, 2);
+
+    let [x, y] = token.value;
+
+    assert_eq(x.type, "float32");
+    assert_eq(x.value, "f");
+    assert_eq(x.label, "x");
+
+    assert_eq(y.type, "float32");
+    assert_eq(y.value, "f");
+    assert_eq(y.label, "y");
+}
+
+TESTS.array = () => {
+    let tokens = yield_tokens('f*{speed}')
 
     assert_eq(tokens.length, 1);
-    assert_eq(tokens[0].type, "bool");
-    assert_eq(tokens[0].value, "b");
-    assert_eq(tokens[0].label, "dead");
+    assert_eq(tokens[0].type, "float32");
+    assert_eq(tokens[0].value, "f");
+    assert_eq(tokens[0].label, "speed");
+    assert_eq(tokens[0].is_array, true);
 }
 
 TESTS.skip_me = () => {
@@ -94,9 +128,19 @@ let STATS = {
     skipped: 0
 };
 
+function arguments_to_string(args) {
+    let s = "";
+    for (let i = 0; i < args.length; i++) {
+        s += JSON.stringify(args[i], null).replace(/"/g, "").replace(/,/g, ", ");
+        if (i < args.length - 1) {
+            s += " -- ";
+        }
+    }
+    return s;
+}
 
 for (let test in TESTS) {
-    LOG(`Running test: ${test} `);
+    LOG(`Test: ${test} `);
 
     var result = 'failed';
     var err = null;
@@ -105,7 +149,7 @@ for (let test in TESTS) {
         TESTS[test]();
         result = 'passed';
     } catch (e) {
-        err = e;
+        err = `${e}`;
         result = 'failed';
     }
 
@@ -127,10 +171,11 @@ for (let test in TESTS) {
     LOG("\n");
 
     if (OUTPUT.length > 0) {
-        LOG("Output:");
+        LOG("Output:\n");
         for (let o of OUTPUT) {
-            // recursively print arrays
-            LOG(" ", o[0]);
+            LOG(" ")
+            LOG(arguments_to_string(o));
+            LOG("\n")
         }
     }
 
