@@ -118,6 +118,41 @@ TESTS.nested_struct = () => {
     assert_vec2(b);
 }
 
+TESTS.array_def_with_spaces = () => {
+    let tokens = yield_tokens('f     *{my_array}')
+
+    assert_eq(tokens.length, 1);
+    assert_eq(tokens[0].type, "float32");
+    assert_eq(tokens[0].value, "f");
+    assert_eq(tokens[0].label, "my_array");
+    assert_eq(tokens[0].is_array, true);
+}
+
+TESTS.preserve_spaces_in_label = () => {
+    let token = yield_token('f{time elapsed}')
+
+    assert_eq(token.type, "float32");
+    assert_eq(token.value, "f");
+    assert_eq(token.label, "time elapsed");
+}
+
+TESTS.strip_label_spaces = () => {
+    let token = yield_token('f{  time elapsed  }')
+
+    assert_eq(token.type, "float32");
+    assert_eq(token.value, "f");
+    assert_eq(token.label, "time elapsed");
+}
+
+TESTS.spaces_everywhere = () => {
+    // spaces everywhere
+    let token = yield_token('  [  f{x}  f{y}  ]  *  {path}  ')
+
+    assert_vec2(token);
+    assert_eq(token.is_array, true);
+    assert_eq(token.label, "path");
+}
+
 TESTS.skip_me = () => {
     skip("This test is skipped");
 }

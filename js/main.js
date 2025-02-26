@@ -206,6 +206,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         IsMouseButtonDown: (button) => GAME.mouse_state[button],
         IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
         InitWindow: (w, h, t) => {
+            console.log("InitWindow", { w, h, t });
             GAME.width = w;
             GAME.height = h;
             const buffer = WF.memory.buffer;
@@ -594,6 +595,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     }
 
     function parse_state(ptr, n_bytes) {
+        // let schema = `
+        //     b{all_loaded}f{curr_time}f{prev_time}u{frame_count}[f{x}f{y}f{width}f{height}]{rect}[f{x}f{y}]{mouse_pos}u{mouse_btn}u{mouse_btn_pressed}u{music}u{font}u{image}u{texture}[u{x_min}u{y_min}u{x_max}u{y_max}]*{anim_blobs}u{anim_blobs_n}[u{x_min}u{y_min}u{x_max}u{y_max}]{anim_blobs_arr}[f{x}f{y}]*{path}u{path_n}[f{x}f{y}]{path_arr}f{path_length}[f{position}f{health}f{max_health}f{spawn_time}f{last_hit_time}b{dead}]*{enemies}u{enemies_n}[f{position}f{health}f{max_health}f{spawn_time}f{last_hit_time}b{dead}]{enemies_arr}b{mute}[[f{x}f{y}]{position}b{dead}]*{turrets}u{turrets_n}[[f{x}f{y}]{position}b{dead}]{turrets_arr}[f*{enemy_mouse}u{enemy_mouse_n}f{enemy_mouse_arr}]{volatile}`;
         let schema = `
           b{all_loaded}
           f{curr_time}
@@ -602,15 +605,17 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           [f{x}f{y}f{width}f{height}]{rect}
           [f{x}f{y}]{mouse_pos}
           b{mouse_btn}
+          b{mouse_btn_pressed}
           u{music}
           u{font}
           u{image}
           u{texture}
           [uuuu]*{anim_blobs}
-          [f{x}f{y}]*{path}
+          [ f{x} f{y}] *{      path}
           f{path_length}
           [fffffb]*{enemies}
           b{mute}
+          [[f{x}f{y}]{position}b{dead}]*{turrets}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);
@@ -636,7 +641,12 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             WF.game_load(state);
             if (read_loaded_flag(state)) {
                 console.log("Game loaded!! :D");
-                console.log(parse_state(state, n_state_size));
+                try {
+                    let parsed_state = parse_state(state, n_state_size);
+                    console.log(parsed_state);
+                } catch (e) {
+                    console.log(e);
+                }
             }
         }
 

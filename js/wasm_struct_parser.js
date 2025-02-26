@@ -1,3 +1,27 @@
+function value_length(token) {
+    if (typeof token.value !== "object") {
+        console.error("Invalid token in value_length", token);
+        return -1;
+    }
+    let len = 0;
+    for (let t of token.value) {
+        if (t.is_array) {
+            // token is an array. will be length-prefixed
+            len += 2;
+            continue;
+        }
+
+        if (t.type === "struct") {
+            len += value_length(t);
+        } else if (t.type === "uint32" || t.type === "float32" || t.type === "bool") {
+            len += 1;
+        } else {
+            console.error("Unknown token type", t);
+        }
+    }
+    return len;
+}
+
 export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 
     var data_view = new DataView(buffer, ptr, n_bytes);
@@ -10,8 +34,16 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
         tokens.push(token);
     }
 
+    for (let token of tokens) {
+        if (token.type === "error") {
+            console.error("Error parsing schema", token);
+            return;
+        }
+    }
+
     function _to_struct(data_view, tokens, i_offset) {
         i_offset = i_offset || 0;
+        // if (i_offset != 0) console.log("Offset", i_offset);
 
         var out = [];
         let i = 0; // byte index
@@ -34,7 +66,7 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                 let _len = len * 4;
 
                 if (token.type === "struct") {
-                    _len *= token.value.length;
+                    _len *= value_length(token);
                 }
 
                 if (len === 0) {
@@ -52,12 +84,13 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                 let _data_view = new DataView(buffer, ptr, _len);
 
                 // let mem = new Uint8Array(buffer, ptr, _len);
+                // console.log("Array", token.label, len, ptr, _len, token.value);
                 // console.table(mem);
 
                 let _fun = undefined;
 
                 if (token.type === "struct") {
-                    _fun = (dv, k) => _to_struct(_data_view, token.value, k * token.value.length * 4)[0];
+                    _fun = (dv, k) => _to_struct(_data_view, token.value, k * value_length(token) * 4)[0];
                 } else if (token.type === "uint32") {
                     _fun = (dv, k) => _data_view.getUint32(k * 4, true);
                 } else if (token.type === "float32") {
@@ -87,7 +120,7 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
                     i += 4;
                 } else if (token.type === "struct") {
                     // recursively parse the struct
-                    let s = _to_struct(data_view, token.value, i);
+                    let s = _to_struct(data_view, token.value, i + i_offset);
                     out.push([token.label, s[0]]);
                     i += s[1];
                 } else {
@@ -116,81 +149,104 @@ export function wasm_to_struct(buffer, ptr, n_bytes, schema,) {
 
 // let schema = "u[ffff]f*{speed}[ff]bu{music}u{font}u{texture}[u{x_max}uuu]*";
 
-function parse_until(schema, i, end) {
+function parse_until(s, end) {
     let content = "";
-    i++;
-    while (schema[i] !== end) {
-        content += schema[i];
-        i++;
+    s.i++;
+    while (s.schema[s.i] !== end) {
+        content += s.schema[s.i];
+        s.i++;
     }
-    return [content, i];
+    return content;
 }
 
-function parse_until_matching(schema, i, start, end) {
+function parse_matching(s, delimiters) {
+    if (delimiters.length !== 2) {
+        throw "Invalid delimiters"
+    }
+    let [start, end] = delimiters;
+
+    if (s.schema[s.i] !== delimiters[0]) {
+        throw `Expected start delimiter ${delimiters[0]} but got ${s.schema[s.i]}`;
+    }
+    s.i++;
+
     let content = "";
     let depth = 0;
+
     while (depth >= 0) {
-        let char = schema[i];
+        let char = s.schema[s.i];
         if (char === start) {
             depth++;
         } else if (char === end) {
             depth--;
         }
         content += char;
-        i++;
+        s.i++;
 
-        if (i > schema.length) {
+        if (s.i > s.schema.length) {
             throw "Unexpected end of schema";
         }
     }
 
     // we've gone too far by one character
-    i--;
+    s.i--;
     content = content.slice(0, -1)
 
-    return [content, i];
-
+    return content;
 }
 
-export function* schema_scanner(schema) {
-    let i = 0;
-    while (i < schema.length) {
+let IGNORE = [" ", ",", "\n"];
+
+// skip until the next non-ignored character
+function skip_ignored(s) {
+    while (s.i < s.schema.length && IGNORE.includes(s.schema[s.i + 1])) {
+        s.i++;
+    }
+}
+
+// try to match the next character in the schema. if it matches, advance the index
+function match_next(s, char) {
+    skip_ignored(s);
+    if (s.schema[s.i + 1] === char) {
+        s.i++;
+        return true;
+    }
+    return false;
+}
+
+export function* schema_scanner(schema_) {
+    let s = { i: 0, schema: schema_ }; // state
+    while (s.i < s.schema.length) {
         var out;
-        let char = schema[i];
+        let char = s.schema[s.i];
         if (char === "u") {
             out = { type: "uint32", value: char }
-            if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
+            if (match_next(s, "*")) { out.is_array = true; }
+            if (match_next(s, "{")) { out.label = parse_matching(s, "{}").trim(); }
             yield out;
         } else if (char === "f") {
             out = { type: "float32", value: char };
-            if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
+            if (match_next(s, "*")) { out.is_array = true; }
+            if (match_next(s, "{")) { out.label = parse_matching(s, "{}").trim(); }
             yield out;
         } else if (char === "b") {
             out = { type: "bool", value: char };
-            if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
+            if (match_next(s, "*")) { out.is_array = true; }
+            if (match_next(s, "{")) { out.label = parse_matching(s, "{}").trim(); }
             yield out;
         } else if (char === "[") {
             out = { type: "struct" };
-            var content = "";
-            [content, i] = parse_until_matching(schema, ++i, "[", "]");
-            if (schema[i + 1] === "*") { i++; out.is_array = true; }
-            if (schema[i + 1] === "{") [out.label, i] = parse_until(schema, ++i, "}");
-
-            // recursively parse the content
-            out.value = [];
-            for (let token of schema_scanner(content)) {
-                out.value.push(token);
-            }
+            let content = parse_matching(s, "[]");
+            if (match_next(s, "*")) { out.is_array = true; }
+            if (match_next(s, "{")) { out.label = parse_matching(s, "{}").trim(); }
+            out.value = [...schema_scanner(content)];
             yield out;
-        } else if (char === " " || char === "," || char === "\n") {
+        } else if (IGNORE.includes(char)) {
             // silently skip whitespace and commas and newlines
         } else {
             yield { type: "error", value: char };
         }
 
-        i++;
+        s.i++;
     }
 }
