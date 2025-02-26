@@ -129,7 +129,7 @@ function parse_until(schema, i, end) {
     return [label, i];
 }
 
-function* schema_scanner(schema) {
+export function* schema_scanner(schema) {
     let i = 0;
     while (i < schema.length) {
         var out;
