@@ -1,5 +1,6 @@
 use raylib::{cstr, Color, Vector2};
 use raylib_wasm as raylib;
+use std::ops::Not;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
@@ -24,6 +25,63 @@ pub type Texture = u32;
 #[cfg(feature = "native")]
 pub type Texture = raylib::Texture;
 
+// 4-byte bool
+#[derive(Clone, Debug)]
+pub struct Bool {
+    pub value: u32,
+}
+
+impl Not for Bool {
+    type Output = Bool;
+
+    fn not(self) -> Bool {
+        Bool {
+            value: if self.value == 0 { 1 } else { 0 },
+        }
+    }
+}
+
+impl Into<bool> for Bool {
+    fn into(self) -> bool {
+        self.value != 0
+    }
+}
+
+impl Bool {
+    #[allow(non_snake_case)]
+    pub fn True() -> Bool {
+        Bool { value: 1 }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn False() -> Bool {
+        Bool { value: 0 }
+    }
+
+    pub fn bool(&self) -> bool {
+        self.value != 0
+    }
+
+    pub fn toggle(&mut self) {
+        self.value = if self.value == 0 { 1 } else { 0 };
+    }
+}
+
+// #[cfg(feature = "web")]
+// pub type Bool = u32;
+// #[cfg(feature = "native")]
+// pub type Bool = bool;
+
+// #[cfg(feature = "web")]
+// pub const TRUE: Bool = 1;
+// #[cfg(feature = "native")]
+// pub const TRUE: Bool = true;
+
+// #[cfg(feature = "web")]
+// pub const FALSE: Bool = 0;
+// #[cfg(feature = "native")]
+// pub const FALSE: Bool = false;
+
 // All the external functions which we promise to implement on the javascript side
 // Some stuff directly maps to raylib functions, and some stuff does not, and needs
 // helper functions below.
@@ -36,8 +94,8 @@ pub mod ffi {
         pub fn PlayMusicStream(music: Music);
         pub fn UpdateMusicStream(music: Music);
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
-        // pub fn IsMusicReady(music: u32) -> bool;
         pub fn IsMouseButtonDown(button: i32) -> bool;
+        pub fn IsMouseButtonPressed(button: i32) -> bool;
         pub fn ConsoleLog(msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
         pub fn DrawTextEx(
@@ -49,11 +107,8 @@ pub mod ffi {
             spacing: f32,
             tint: *const Color,
         );
-        // pub fn LoadTexture(file_path: *const i8) -> u32;
-        // #[no_mangle]
         pub fn LoadTexture(file_path: *const i8) -> Texture;
-        pub fn GetTextureWidth(texture: Texture) -> i32;
-        pub fn GetTextureHeight(texture: Texture) -> i32;
+        pub fn GetTextureShape(texture: Texture, vector: *mut Vector2);
         pub fn DrawTextureEx(
             texture: Texture,
             positionX: i32,
@@ -85,6 +140,8 @@ pub mod ffi {
             thickness: f32,
             color: *const Color,
         );
+        pub fn SetMusicVolume(music: Music, volume: f32);
+        pub fn IsKeyPressed(key: i32) -> bool;
     }
 }
 
@@ -155,22 +212,21 @@ pub fn update_music_stream(music: Music) {
     };
 }
 
-pub fn get_texture_height(texture: Texture) -> i32 {
-    #[cfg(feature = "web")]
-    unsafe {
-        ffi::GetTextureHeight(texture)
-    }
-    #[cfg(feature = "native")]
-    texture.height
-}
+pub fn get_texture_shape(texture: Texture) -> Vector2 {
+    let mut vector = Vector2 { x: 0.0, y: 0.0 };
 
-pub fn get_texture_width(texture: Texture) -> i32 {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::GetTextureWidth(texture)
+        ffi::GetTextureShape(texture, &mut vector)
     }
+
     #[cfg(feature = "native")]
-    texture.width
+    {
+        vector.x = texture.width as f32;
+        vector.y = texture.height as f32;
+    }
+
+    vector
 }
 
 pub fn is_mouse_button_down(button: i32) -> bool {
@@ -181,6 +237,17 @@ pub fn is_mouse_button_down(button: i32) -> bool {
     #[cfg(feature = "native")]
     unsafe {
         raylib::IsMouseButtonDown(button)
+    }
+}
+
+pub fn is_mouse_button_pressed(button: i32) -> bool {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::IsMouseButtonPressed(button)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::IsMouseButtonPressed(button)
     }
 }
 
@@ -397,5 +464,35 @@ pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color:
     #[cfg(feature = "native")]
     unsafe {
         raylib::DrawLineEx(start_pos, end_pos, thickness, color);
+    }
+}
+
+pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
+    unsafe { raylib::DrawCircle(mouse_pos.x as i32, mouse_pos.y as i32, radius, color) }
+}
+
+pub fn get_mouse_position() -> Vector2 {
+    unsafe { raylib::GetMousePosition() }
+}
+
+pub fn set_music_volume(music: Music, volume: f32) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetMusicVolume(music, volume);
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetMusicVolume(music, volume);
+    }
+}
+
+pub fn is_key_pressed(key: raylib::KeyboardKey) -> bool {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::IsKeyPressed(key as i32)
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::IsKeyPressed(key)
     }
 }

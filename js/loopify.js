@@ -63,12 +63,10 @@ export function loopify(uri, cb) {
 
     function success(buffer) {
 
-        var source;
+        var SOURCE;
+        var GAIN;
         var future_id; // id of the timeout for the next play
-
-        function canPlay() {
-            return can_play;
-        }
+        var VOL = 1.0;
 
         function play(fade_time) {
 
@@ -96,14 +94,14 @@ export function loopify(uri, cb) {
                 var now = context.currentTime;
 
                 // Create a new source (can't replay an existing source)
-                source = context.createBufferSource();
+                SOURCE = context.createBufferSource();
                 var gain = context.createGain();
-                source.connect(gain).connect(context.destination);
-                source.buffer = buffer;
+                SOURCE.connect(gain).connect(context.destination);
+                SOURCE.buffer = buffer;
 
                 // Fade in this segment
                 gain.gain.setValueAtTime(0, now);
-                gain.gain.linearRampToValueAtTime(1, now + fade_time);
+                gain.gain.linearRampToValueAtTime(VOL, now + fade_time);
 
                 // Crossfade with previous segment if it exists
                 if (prev_gain !== undefined) {
@@ -111,7 +109,7 @@ export function loopify(uri, cb) {
                 }
 
                 // start source
-                source.start(now);
+                SOURCE.start(now);
 
                 return gain;
             }
@@ -119,7 +117,7 @@ export function loopify(uri, cb) {
             // Play segment and recursively schedule the next one
             function recursivePlay(prev_gain) {
                 // Play the current segment
-                var gain = playSegment(prev_gain);
+                GAIN = playSegment(prev_gain);
 
                 // Schedule ourselves to play the next segment
                 future_id = setTimeout(() => {
@@ -136,9 +134,10 @@ export function loopify(uri, cb) {
             want_to_play = false;
 
             // Stop and clear if it's playing
-            if (source) {
-                source.stop();
-                source = null;
+            if (SOURCE) {
+                SOURCE.stop();
+                SOURCE = null;
+                GAIN = null;
             }
 
             // Clear any future play timeouts
@@ -150,7 +149,14 @@ export function loopify(uri, cb) {
         }
 
         function playing() {
-            return source !== undefined;
+            return SOURCE !== undefined;
+        }
+
+        function volume(vol) {
+            if (GAIN) {
+                GAIN.gain.setValueAtTime(vol, context.currentTime);
+            }
+            VOL = vol; // save for future playbacks
         }
 
         // Return the object to the callback
@@ -158,6 +164,7 @@ export function loopify(uri, cb) {
             play: play,
             stop: stop,
             playing: playing,
+            volume: volume,
         }
 
         cb(null, obj);
