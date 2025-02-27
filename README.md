@@ -38,4 +38,6 @@ By 'working' I mean on web and on my machine (macos).
 - [x] Music
 - [x] Basic Texture loading
 - [x] Basic Animations
-- [ ] 
+- [x] Entities
+- [ ] Entity interactions
+- [ ] Life/Currency system
