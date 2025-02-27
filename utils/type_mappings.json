@@ -1,0 +1,9 @@
+{
+    "Rectangle": "[f{x}f{y}f{width}f{height}]",
+    "Vector2": "[f{x}f{y}]",
+    "webhacks::Music": "u",
+    "webhacks::Font": "u",
+    "webhacks::Image": "u",
+    "webhacks::Texture": "u",
+    "Bool": "b"
+}
