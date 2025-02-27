@@ -138,9 +138,7 @@ impl VolatileState {
     }
 
     fn set_enemy_mouse_distances(&mut self, distances: Vec<f32>) {
-        if !self.enemy_mouse_arr.is_null() {
-            free_malloced(self.enemy_mouse_n, self.enemy_mouse_arr);
-        }
+        free_malloced(self.enemy_mouse_n, self.enemy_mouse_arr);
         let (enemy_mouse_n, enemy_mouse_arr) = clone_to_malloced(distances);
         self.enemy_mouse_n = enemy_mouse_n;
         self.enemy_mouse_arr = enemy_mouse_arr;
@@ -187,9 +185,7 @@ impl State {
     }
 
     fn set_turrets_vec(&mut self, turrets: Vec<Turret>) {
-        if !self.turrets_arr.is_null() {
-            free_malloced(self.turrets_n, self.turrets_arr);
-        }
+        free_malloced(self.turrets_n, self.turrets_arr);
         let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
         self.turrets_n = turrets_n;
         self.turrets_arr = turrets_arr;
@@ -206,9 +202,7 @@ impl State {
     }
 
     fn set_enemies_vec(&mut self, enemies: Vec<Enemy>) {
-        if !self.enemies_arr.is_null() {
-            free_malloced(self.enemies_n, self.enemies_arr);
-        }
+        free_malloced(self.enemies_n, self.enemies_arr);
         let (enemies_n, enemies_arr) = clone_to_malloced(enemies);
         self.enemies_n = enemies_n;
         self.enemies_arr = enemies_arr;
@@ -267,8 +261,8 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
 
 fn make_initial_turrets() -> Vec<Turret> {
     vec![
-        Turret::new(Vector2::new(100.0, 100.0)),
-        Turret::new(Vector2::new(200.0, 200.0)),
+        Turret::new(Vector2::new(200.0, 150.0)),
+        Turret::new(Vector2::new(400.0, 150.0)),
     ]
 }
 
@@ -364,14 +358,12 @@ fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
     (n, vec_ptr)
 }
 
-#[allow(dead_code)]
 fn free_malloced<T>(len: u32, ptr: *mut T) {
-    let size = std::mem::size_of::<T>() * len as usize;
-    let maybe_layout = std::alloc::Layout::from_size_align(size, 4);
-    if maybe_layout.is_err() {
+    if ptr.is_null() {
         return;
     }
-    let layout = maybe_layout.unwrap();
+    let size = std::mem::size_of::<T>() * len as usize;
+    let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     let _ptr = ptr as *mut u8;
     unsafe { std::alloc::dealloc(_ptr, layout) }
 }

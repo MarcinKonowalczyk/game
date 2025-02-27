@@ -610,7 +610,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           u{image}
           u{texture}
           [uuuu]*{anim_blobs}
-          [ f{x} f{y}] *{      path}
+          [f{x}f{y}]*{path}
           f{path_length}
           [fffffb]*{enemies}
           b{mute}
