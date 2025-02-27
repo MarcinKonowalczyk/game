@@ -148,6 +148,7 @@ function onResize() {
     CONTAINER.style.height = GAME.style.height = h + "px";
     CONTAINER.style.top = Math.floor((window.innerHeight - h) / 2) + "px";
     CONTAINER.style.left = Math.floor((window.innerWidth - w) / 2) + "px";
+
 }
 
 window.onresize = onResize;
@@ -405,7 +406,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const destRec = getRectangle(buffer, destRec_ptr);
             CTX.save();
             CTX.translate(destRec.x, destRec.y);
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 0, 0, destRec.width, destRec.height);
+            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 1.0, 1.0, destRec.width, destRec.height);
             CTX.restore();
         },
         GetScreenWidth: () => CTX.canvas.width,
@@ -601,7 +602,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           f{curr_time}
           f{prev_time}
           u{frame_count}
-          [f{x}f{y}f{width}f{height}]{rect}
+          [f{x}f{y}]{slime_pos}
           [f{x}f{y}]{mouse_pos}
           b{mouse_btn}
           b{mouse_btn_pressed}

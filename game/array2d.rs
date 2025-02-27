@@ -54,17 +54,6 @@ impl Array2D {
     }
 }
 
-// trait Array2DAccess {
-//     fn width(&self) -> usize;
-//     fn height(&self) -> usize;
-//     fn get(&self, x: usize, y: usize) -> f32;
-//     fn set(&mut self, x: usize, y: usize, value: f32);
-//     fn get_row(&self, y: usize) -> &[f32];
-//     fn get_row_mut(&mut self, y: usize) -> &mut [f32];
-//     fn get_col(&self, x: usize) -> Vec<f32>;
-//     fn get_col_mut(&mut self, x: usize) -> &mut [f32];
-// }
-
 impl Array2D {
     pub fn width(&self) -> usize {
         self.width
@@ -74,8 +63,8 @@ impl Array2D {
         self.height
     }
 
-    pub fn get(&self, x: usize, y: usize) -> &f32 {
-        &self.data[self.linear_index(x, y)]
+    pub fn get(&self, x: usize, y: usize) -> f32 {
+        self.data[self.linear_index(x, y)]
     }
 
     pub fn set(&mut self, x: usize, y: usize, value: f32) {
@@ -95,25 +84,13 @@ impl Array2D {
         &self.data[start..end]
     }
 
-    // pub fn get_row_mut(&mut self, y: usize) -> &mut [f32] {
-    //     let start = self.width * y;
-    //     let end = start + self.width;
-    //     &mut self.data[start..end]
-    // }
-
-    pub fn get_col(&self, x: usize) -> Vec<&f32> {
+    pub fn get_col(&self, x: usize) -> Vec<f32> {
         let mut col = Vec::with_capacity(self.height);
         for y in 0..self.height {
             col.push(self.get(x, y));
         }
         col
     }
-
-    // pub fn get_col_mut(&mut self, x: usize) -> &mut [f32] {
-    //     let start = x;
-    //     let end = self.data.len();
-    //     &mut self.data[start..end]
-    // }
 
     pub fn set_row(&mut self, y: usize, row: &[f32]) {
         let start = self.width * y;

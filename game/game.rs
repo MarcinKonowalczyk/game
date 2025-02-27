@@ -22,6 +22,7 @@ const SPEED_BOOSTED: f32 = 1550.0;
 const SPAWN_INTERVAL: f32 = 1.0;
 const SPEED_ENEMY: f32 = 340.0;
 
+const TURRET_RADIUS: f32 = 10.0;
 const ACTIVE_RADIUS: f32 = 100.0;
 
 const ALPHA_BEIGE: Color = Color {
@@ -84,10 +85,10 @@ impl Enemy {
         };
     }
 
-    fn draw_background(&self, _index: usize, state: &State) {
-        let path = state.get_path();
-        let pos = self.screen_position(path);
-        webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
+    fn draw_background(&self, _index: usize, _state: &State) {
+        // let path = state.get_path();
+        // let pos = self.screen_position(path);
+        // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
     fn draw_foreground(&self, index: usize, state: &State) {
@@ -123,8 +124,12 @@ impl Turret {
         }
     }
 
-    fn update(&mut self, _state: &State) {
-        //
+    fn update(&mut self, state: &State) {
+        let mouse_distance = self.position.dist(state.mouse_pos);
+        if state.mouse_btn_pressed.bool() && mouse_distance < TURRET_RADIUS {
+            // despawn the turret
+            self.dead = Bool::True();
+        }
     }
 
     fn draw_background(&self, _index: usize, _state: &State) {
@@ -132,7 +137,13 @@ impl Turret {
     }
 
     fn draw_foreground(&self, _index: usize, _state: &State) {
-        webhacks::draw_circle(self.position, 10.0, PINK);
+        let mouse_distance = self.position.dist(_state.mouse_pos);
+        let radius = if mouse_distance < TURRET_RADIUS {
+            TURRET_RADIUS * 1.5
+        } else {
+            TURRET_RADIUS
+        };
+        webhacks::draw_circle(self.position, radius, PINK);
     }
 }
 
@@ -143,7 +154,7 @@ pub struct State {
     pub curr_time: f32,
     pub prev_time: f32,
     pub frame_count: u32,
-    pub rect: Rectangle,
+    pub slime_pos: Vector2,
     pub mouse_pos: Vector2,
     pub mouse_btn: Bool,
     pub mouse_btn_pressed: Bool,
@@ -303,12 +314,7 @@ pub fn game_init() -> State {
         curr_time: webhacks::get_time() as f32,
         prev_time: 0.0,
         frame_count: 99,
-        rect: Rectangle {
-            x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
-            y: (WINDOW_HEIGHT as f32 - 100.0) / 2.0,
-            width: 100.0,
-            height: 100.0,
-        },
+        slime_pos: Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0 + 50.0),
         mouse_pos: Vector2::new(0.0, 0.0),
         mouse_btn: Bool::False(),
         mouse_btn_pressed: Bool::False(),
@@ -444,22 +450,22 @@ fn handle_keys(state: &mut State) {
         d = raylib::IsKeyDown(KEY::D);
     }
 
-    state.rect.y -= dt * speed * (w as i32 as f32);
-    state.rect.y += dt * speed * (s as i32 as f32);
-    state.rect.x -= dt * speed * (a as i32 as f32);
-    state.rect.x += dt * speed * (d as i32 as f32);
+    state.slime_pos.y -= dt * speed * (w as i32 as f32);
+    state.slime_pos.y += dt * speed * (s as i32 as f32);
+    state.slime_pos.x -= dt * speed * (a as i32 as f32);
+    state.slime_pos.x += dt * speed * (d as i32 as f32);
 
     // prevent the rect from wandering off the screen too far
-    if state.rect.x < -state.rect.width {
-        state.rect.x = -state.rect.width;
-    } else if state.rect.x > WINDOW_WIDTH as f32 {
-        state.rect.x = WINDOW_WIDTH as f32;
+    if state.slime_pos.x < -100.0 {
+        state.slime_pos.x = -100.0;
+    } else if state.slime_pos.x > WINDOW_WIDTH as f32 {
+        state.slime_pos.x = WINDOW_WIDTH as f32;
     }
 
-    if state.rect.y < -state.rect.height {
-        state.rect.y = -state.rect.height;
-    } else if state.rect.y > WINDOW_HEIGHT as f32 {
-        state.rect.y = WINDOW_HEIGHT as f32;
+    if state.slime_pos.y < -100.0 {
+        state.slime_pos.y = -100.0;
+    } else if state.slime_pos.y > WINDOW_HEIGHT as f32 {
+        state.slime_pos.y = WINDOW_HEIGHT as f32;
     }
 
     // if raylib::IsKeyPressed(KEY::M) {
@@ -487,36 +493,30 @@ fn handle_mouse(state: &mut State) {
     };
 }
 
-fn draw_slime_at_rect(
-    rect: Rectangle,
+fn draw_slime_at_pos(
+    position: Vector2,
     anim_blobs: &[anim::Blob],
     texture: webhacks::Texture,
     time: f32,
 ) {
-    let mut position = Vector2::new(rect.x, rect.y);
-
-    // figure out how to scale the texture to the size of the rect
-    let shape = webhacks::get_texture_shape(texture);
-    let scale = rect.width / shape.x as f32;
-
-    // Move the texture so it's at the bottom of the rect
-    let scaled_height = shape.y as f32 * scale;
-    position.y += rect.height - scaled_height;
-
+    let scale = 5.0;
     let i = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
 
     let blob = anim_blobs[i as usize];
     let source = blob.to_rect();
+    let width = blob.width() as f32 * scale;
+    let height = blob.height() as f32 * scale;
     webhacks::draw_texture_pro(
         texture,
         source,
         Rectangle {
-            x: position.x,
-            y: position.y,
-            width: rect.width,
-            height: scaled_height,
+            x: position.x - width / 2.0,
+            y: position.y - height,
+            width: width,
+            height: height,
         },
     );
+    // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
 fn process_entities(state: &mut State) {
@@ -541,13 +541,15 @@ fn process_entities(state: &mut State) {
         .filter(|enemy| !enemy.dead.bool())
         .collect();
 
-    // process turrets
-    if state.mouse_btn_pressed.bool() {
-        turrets.push(Turret::new(state.mouse_pos));
-    }
-
+    let mut any_dead = false;
     for turret in turrets.iter_mut() {
         turret.update(state);
+        any_dead = any_dead || turret.dead.bool();
+    }
+
+    if !any_dead && state.mouse_btn_pressed.bool() {
+        // check if we've clicked with
+        turrets.push(Turret::new(state.mouse_pos));
     }
 
     turrets = turrets
@@ -646,12 +648,12 @@ fn draw_path(state: &State) {
 }
 
 fn draw_text(state: &State) {
-    let rect_pos = format! {
-        "rect: [{x}, {y}]",
-        x = state.rect.x.round(),
-        y = state.rect.y.round()
+    let slime_pos_text = format! {
+        "slime: [{x}, {y}]",
+        x = state.slime_pos.x.round(),
+        y = state.slime_pos.y.round()
     };
-    webhacks::draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
+    webhacks::draw_text(state.font, &slime_pos_text, 10, 10, 20, RAYWHITE);
 
     let mouse_pos = format! {
         "mouse: [{x}, {y}]",
@@ -695,7 +697,7 @@ pub fn game_frame(state: &mut State) {
         let anim_blobs = unsafe {
             std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
         };
-        draw_slime_at_rect(state.rect, anim_blobs, state.texture, state.curr_time);
+        draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
 
         draw_text(state);
         draw_entities_background(state);
