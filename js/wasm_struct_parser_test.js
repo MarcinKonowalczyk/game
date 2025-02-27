@@ -322,7 +322,7 @@ let total = STATS.passed + STATS.failed + STATS.skipped;
 let skipped_color = STATS.skipped > 0 ? YELLOW : GREEN;
 let failed_color = STATS.failed > 0 ? RED : GREEN;
 
-LOG(`Run ${total} tests: ${GREEN}${STATS.passed} passed${RESET}, ${skipped_color}${STATS.skipped} skipped${RESET}, ${failed_color}${STATS.failed} failed${RESET}`);
+LOG(`Run ${total} tests: ${GREEN}${STATS.passed} passed${RESET}, ${skipped_color}${STATS.skipped} skipped${RESET}, ${failed_color}${STATS.failed} failed${RESET}\n`);
 
 if (STATS.failed > 0) {
     process.exit(1);
