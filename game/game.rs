@@ -48,8 +48,6 @@ pub struct Turret {
 }
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
-    // path_pos in pixels
-
     // walk along the path until we reach the correct position
     let mut current_path_length = 0.0;
     for i in 1..path.len() {
@@ -138,34 +136,6 @@ impl Turret {
     }
 }
 
-// // Recomputed at the beginning of every frame
-// #[repr(C, align(4))]
-// #[derive(Clone, Debug)]
-// pub struct VolatileState {
-//     pub enemy_mouse_n: u32,
-//     pub enemy_mouse_arr: *mut f32, // distance of each enemy from the mouse
-// }
-
-// impl VolatileState {
-//     fn get_enemy_mouse_distances(&self) -> Option<Vec<f32>> {
-//         if self.enemy_mouse_arr.is_null() {
-//             None
-//         } else {
-//             let slice = unsafe {
-//                 std::slice::from_raw_parts(self.enemy_mouse_arr, self.enemy_mouse_n as usize)
-//             };
-//             Some(slice.to_vec())
-//         }
-//     }
-
-//     fn set_enemy_mouse_distances(&mut self, distances: Vec<f32>) {
-//         free_malloced(self.enemy_mouse_n, self.enemy_mouse_arr);
-//         let (enemy_mouse_n, enemy_mouse_arr) = clone_to_malloced(distances);
-//         self.enemy_mouse_n = enemy_mouse_n;
-//         self.enemy_mouse_arr = enemy_mouse_arr;
-//     }
-// }
-
 #[repr(C, align(4))]
 #[derive(Clone)]
 pub struct State {
@@ -195,42 +165,46 @@ pub struct State {
 }
 
 impl State {
-    fn get_turrets_vec(&self) -> Option<Vec<Turret>> {
+    fn get_turrets(&self) -> Option<&[Turret]> {
         if self.turrets_arr.is_null() {
             None
         } else {
             let slice =
                 unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
-            Some(slice.to_vec())
+            Some(slice)
         }
     }
 
-    fn set_turrets_vec(&mut self, turrets: Vec<Turret>) {
+    fn set_turrets(&mut self, turrets: &[Turret]) {
         free_malloced(self.turrets_n, self.turrets_arr);
         let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
         self.turrets_n = turrets_n;
         self.turrets_arr = turrets_arr;
     }
 
-    fn get_enemies_vec(&self) -> Option<Vec<Enemy>> {
+    fn get_enemies(&self) -> Option<&[Enemy]> {
         if self.enemies_arr.is_null() {
             None
         } else {
             let slice =
                 unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
-            Some(slice.to_vec())
+            Some(slice)
         }
     }
 
-    fn set_enemies_vec(&mut self, enemies: Vec<Enemy>) {
+    fn set_enemies(&mut self, enemies: &[Enemy]) {
         free_malloced(self.enemies_n, self.enemies_arr);
-        let (enemies_n, enemies_arr) = clone_to_malloced(enemies);
+        let (enemies_n, enemies_arr) = clone_to_malloced(&enemies);
         self.enemies_n = enemies_n;
         self.enemies_arr = enemies_arr;
     }
 
     fn get_path(&self) -> &[Vector2] {
-        unsafe { std::slice::from_raw_parts(self.path_arr, self.path_n as usize) }
+        if self.path_arr.is_null() {
+            return &[];
+        } else {
+            unsafe { std::slice::from_raw_parts(self.path_arr, self.path_n as usize) }
+        }
     }
 
     fn get_distances(&self) -> &Array2D {
@@ -314,10 +288,10 @@ pub fn game_init() -> State {
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
     let (path_points, path_length) = make_path_points();
-    let (path_n, path_arr) = clone_to_malloced(path_points);
+    let (path_n, path_arr) = clone_to_malloced(&path_points);
 
     let turrets = make_initial_turrets();
-    let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
+    let (turrets_n, turrets_arr) = clone_to_malloced(&turrets);
 
     let distances = Array2D::new(0, 0);
 
@@ -356,24 +330,24 @@ pub fn game_init() -> State {
     }
 }
 
-fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
-    let n = vec.len().try_into().unwrap();
+fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
+    let n = arr.len().try_into().unwrap();
 
     if n == 0 {
         return (0, std::ptr::null_mut());
     }
 
-    let vec_mem_size = std::mem::size_of::<T>() * vec.len();
-    let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
-    let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
+    let mem_size = std::mem::size_of::<T>() * arr.len();
+    let layout = std::alloc::Layout::from_size_align(mem_size, 4).unwrap();
+    let ptr = unsafe { std::alloc::alloc(layout) as *mut T };
 
-    for (i, item) in vec.iter().enumerate() {
+    for (i, item) in arr.iter().enumerate() {
         unsafe {
-            *vec_ptr.offset(i as isize) = item.clone();
+            *ptr.offset(i as isize) = item.clone();
         }
     }
 
-    (n, vec_ptr)
+    (n, ptr)
 }
 
 fn free_malloced<T>(len: u32, ptr: *mut T) {
@@ -431,14 +405,12 @@ pub fn game_load(state: &mut State) {
         // Once we've determined that init/load is done, we can unload some resources
 
         let blobs = anim::find_blobs(state.image);
-
-        // we have a vector of blobs. lets put it into a malloced array
-        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(blobs);
+        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
 
         state.anim_blobs_arr = anim_blobs_arr;
         state.anim_blobs_n = anim_blobs_n;
 
-        webhacks::unload_image(state.image); // we don't need the image anymore    }
+        webhacks::unload_image(state.image); // we don't need the image anymore
 
         if state.mute.bool() {
             webhacks::set_music_volume(state.music, 0.0);
@@ -548,8 +520,8 @@ fn draw_slime_at_rect(
 }
 
 fn process_entities(state: &mut State) {
-    let mut enemies = state.get_enemies_vec().unwrap_or_default();
-    let mut turrets = state.get_turrets_vec().unwrap_or_default();
+    let mut enemies = state.get_enemies().unwrap_or_default().to_vec();
+    let mut turrets = state.get_turrets().unwrap_or_default().to_vec();
 
     let last_enemy = enemies.last();
 
@@ -602,13 +574,13 @@ fn process_entities(state: &mut State) {
     }
 
     state.set_distances(distances);
-    state.set_enemies_vec(enemies);
-    state.set_turrets_vec(turrets);
+    state.set_enemies(&enemies);
+    state.set_turrets(&turrets);
 }
 
 fn draw_entities_background(state: &State) {
-    let enemies = state.get_enemies_vec().unwrap_or_default();
-    let turrets = state.get_turrets_vec().unwrap_or_default();
+    let enemies = state.get_enemies().unwrap_or_default();
+    let turrets = state.get_turrets().unwrap_or_default();
 
     let distances = state.get_distances();
 
@@ -641,8 +613,8 @@ fn draw_entities_background(state: &State) {
 }
 
 fn draw_entities_foreground(state: &State) {
-    let enemies = state.get_enemies_vec().unwrap_or_default();
-    let turrets = state.get_turrets_vec().unwrap_or_default();
+    let enemies = state.get_enemies().unwrap_or_default();
+    let turrets = state.get_turrets().unwrap_or_default();
 
     for (i, enemy) in enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
