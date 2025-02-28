@@ -615,7 +615,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           f{path_length}
           [fffffb]*{enemies}
           b{mute}
-          [[f{x}f{y}]{position}b{dead}]*{turrets}
+          [[f{x}f{y}]{position}b{dead}b{hover}]*{turrets}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);

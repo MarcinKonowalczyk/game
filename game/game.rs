@@ -46,6 +46,7 @@ pub struct Enemy {
 pub struct Turret {
     pub position: Vector2, // position along the path in pixels
     pub dead: Bool,
+    pub hover: Bool,
 }
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
@@ -121,12 +122,20 @@ impl Turret {
         Turret {
             position,
             dead: Bool::False(),
+            hover: Bool::False(),
         }
     }
 
     fn update(&mut self, state: &State) {
         let mouse_distance = self.position.dist(state.mouse_pos);
-        if state.mouse_btn_pressed.bool() && mouse_distance < TURRET_RADIUS {
+        if mouse_distance < TURRET_RADIUS {
+            self.hover = Bool::True();
+        } else if mouse_distance < 1.5 * TURRET_RADIUS {
+            //
+        } else {
+            self.hover = Bool::False();
+        }
+        if self.hover.bool() && state.mouse_btn_pressed.bool() {
             // despawn the turret
             self.dead = Bool::True();
         }
@@ -137,8 +146,13 @@ impl Turret {
     }
 
     fn draw_foreground(&self, _index: usize, _state: &State) {
-        let mouse_distance = self.position.dist(_state.mouse_pos);
-        let radius = if mouse_distance < TURRET_RADIUS {
+        // let mouse_distance = self.position.dist(_state.mouse_pos);
+        // // let radius = if mouse_distance < 1.5 * TURRET_RADIUS {
+        // //     TURRET_RADIUS * 1.5
+        // // } else {
+        // //     TURRET_RADIUS
+        // // };
+        let radius = if self.hover.bool() {
             TURRET_RADIUS * 1.5
         } else {
             TURRET_RADIUS
