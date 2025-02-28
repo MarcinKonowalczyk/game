@@ -1,7 +1,7 @@
 use raylib_wasm::PINK;
 
-use crate::vec2_ext::Vector2;
-use crate::vec2_ext::Vector2Ext;
+use crate::vec2::Vector2;
+use crate::vec2::Vector2Ext;
 
 use crate::webhacks;
 use crate::State;
@@ -29,7 +29,7 @@ impl Turret {
     }
 
     pub fn update(&mut self, state: &State) {
-        let mouse_distance = self.position.dist(state.mouse_pos);
+        let mouse_distance = self.position.dist(&state.mouse_pos);
         if mouse_distance < TURRET_RADIUS {
             self.hover = Bool::True();
         } else if mouse_distance < 1.5 * TURRET_RADIUS {

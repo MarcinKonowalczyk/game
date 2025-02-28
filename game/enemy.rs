@@ -1,5 +1,5 @@
-use crate::vec2_ext::Vector2;
-use crate::vec2_ext::Vector2Ext;
+use crate::vec2::Vector2;
+use crate::vec2::Vector2Ext;
 use crate::webhacks;
 use crate::webhacks::Bool;
 
@@ -13,17 +13,37 @@ fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
     // walk along the path until we reach the correct position
     let mut current_path_length = 0.0;
     for i in 1..path.len() {
-        let p1 = path[i - 1];
+        let mut p1 = path[i - 1].clone();
         let p2 = path[i];
-        let segment_length = p1.dist(p2);
+        let segment_length = p1.dist(&p2);
         if current_path_length + segment_length >= path_pos {
             let segment_pos = (path_pos - current_path_length) / segment_length;
-            return p1.lerp(p2, segment_pos);
+            return *p1.lerp(&p2, segment_pos);
         }
         current_path_length += segment_length;
     }
 
     path[path.len() - 1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_pos_to_screen_pos() {
+        let path = vec![
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 100.0),
+            Vector2::new(100.0, 100.0),
+        ];
+        let pos = path_pos_to_screen_pos(0.0, &path);
+        assert_eq!(pos, Vector2::new(0.0, 0.0));
+        let pos = path_pos_to_screen_pos(50.0, &path);
+        assert_eq!(pos, Vector2::new(0.0, 50.0));
+        let pos = path_pos_to_screen_pos(150.0, &path);
+        assert_eq!(pos, Vector2::new(50.0, 100.0));
+    }
 }
 
 #[derive(Clone, Debug)]

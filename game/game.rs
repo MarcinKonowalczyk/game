@@ -8,14 +8,14 @@ mod array2d;
 mod defer;
 mod enemy;
 mod turret;
-mod vec2_ext;
+mod vec2;
 mod webhacks;
 
 use crate::array2d::Array2D;
 use crate::enemy::Enemy;
 use crate::turret::Turret;
-use crate::vec2_ext::Vector2;
-use crate::vec2_ext::Vector2Ext;
+use crate::vec2::Vector2;
+use crate::vec2::Vector2Ext;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -150,7 +150,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
     let path_length = path_points
         .iter()
         .fold((0.0, path_points[0]), |(acc, prev), &p| {
-            (acc + prev.dist(p), p)
+            (acc + prev.dist(&p), p)
         })
         .0;
 
@@ -455,12 +455,12 @@ fn process_entities(state: &mut State) {
         for (j, turret) in turrets.iter().enumerate() {
             let dist = enemy
                 .screen_position(state.get_path())
-                .dist(turret.position);
+                .dist(&turret.position);
             distances.set(i, j, dist);
         }
         let mouse_dist = enemy
             .screen_position(state.get_path())
-            .dist(state.mouse_pos);
+            .dist(&state.mouse_pos);
         distances.set(i, turrets.len(), mouse_dist);
     }
 

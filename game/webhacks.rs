@@ -1,6 +1,9 @@
-use raylib::{cstr, Color, Vector2};
+use raylib::{cstr, Color};
 use raylib_wasm as raylib;
 use std::ops::Not;
+
+use crate::vec2::Vector2;
+use crate::vec2::Vector2Ext;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
@@ -166,7 +169,7 @@ pub fn draw_texture_ex(
     }
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawTextureEx(texture, position, rotation, scale, tint)
+        raylib::DrawTextureEx(texture, position.into(), rotation, scale, tint)
     }
 }
 
@@ -186,10 +189,7 @@ pub fn draw_text(font: Font, text: &str, x: i32, y: i32, size: i32, color: Color
         raylib::DrawTextEx(
             font,
             cstr!(text),
-            Vector2 {
-                x: x as f32,
-                y: y as f32,
-            },
+            Vector2::new(x as f32, y as f32).into(),
             size as f32,
             2.0,
             color,
@@ -463,7 +463,7 @@ pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color:
     }
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawLineEx(start_pos, end_pos, thickness, color);
+        raylib::DrawLineEx(start_pos.into(), end_pos.into(), thickness, color);
     }
 }
 
@@ -472,7 +472,7 @@ pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
 }
 
 pub fn get_mouse_position() -> Vector2 {
-    unsafe { raylib::GetMousePosition() }
+    unsafe { raylib::GetMousePosition() }.into()
 }
 
 pub fn set_music_volume(music: Music, volume: f32) {
