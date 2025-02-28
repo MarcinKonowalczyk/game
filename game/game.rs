@@ -1,15 +1,19 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
+use raylib_wasm::Color;
 use raylib_wasm::{self as raylib, BLUE};
-use raylib_wasm::{Color, PINK};
 use webhacks::Bool;
 
 mod anim;
 mod array2d;
 mod defer;
+mod enemy;
+mod turret;
 mod vec2_ext;
 mod webhacks;
 
 use crate::array2d::Array2D;
+use crate::enemy::Enemy;
+use crate::turret::Turret;
 use crate::vec2_ext::Vector2;
 use crate::vec2_ext::Vector2Ext;
 
@@ -31,135 +35,6 @@ const ALPHA_BEIGE: Color = Color {
     b: 131,
     a: 100,
 };
-
-#[derive(Clone, Debug)]
-pub struct Enemy {
-    pub position: f32, // position along the path in pixels
-    pub health: f32,
-    pub max_health: f32,
-    pub spawn_time: f32,
-    pub last_hit_time: f32,
-    pub dead: Bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct Turret {
-    pub position: Vector2, // position along the path in pixels
-    pub dead: Bool,
-    pub hover: Bool,
-}
-
-fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
-    // walk along the path until we reach the correct position
-    let mut current_path_length = 0.0;
-    for i in 1..path.len() {
-        let p1 = path[i - 1];
-        let p2 = path[i];
-        let segment_length = p1.dist(p2);
-        if current_path_length + segment_length >= path_pos {
-            let segment_pos = (path_pos - current_path_length) / segment_length;
-            return p1.lerp(p2, segment_pos);
-        }
-        current_path_length += segment_length;
-    }
-
-    path[path.len() - 1]
-}
-
-impl Enemy {
-    fn new(time: f32) -> Enemy {
-        Enemy {
-            position: 0.0,
-            health: 100.0,
-            max_health: 100.0,
-            spawn_time: time,
-            last_hit_time: -1.0,
-            dead: Bool::False(),
-        }
-    }
-
-    fn update(&mut self, state: &State) {
-        let dt = state.curr_time - state.prev_time;
-        self.position += SPEED_ENEMY * dt;
-        if self.position >= state.path_length {
-            self.dead = Bool::True();
-        };
-    }
-
-    fn draw_background(&self, _index: usize, _state: &State) {
-        // let path = state.get_path();
-        // let pos = self.screen_position(path);
-        // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
-    }
-
-    fn draw_foreground(&self, index: usize, state: &State) {
-        let path = state.get_path();
-        let pos = self.screen_position(path);
-        let distances = state.get_distances();
-
-        let distance = if distances.height() == 0 {
-            f32::MAX
-        } else {
-            let mouse_distances = distances.get_row(distances.height() - 1);
-            mouse_distances.get(index).cloned().unwrap_or(f32::MAX)
-        };
-
-        let color = if distance < ACTIVE_RADIUS {
-            PINK
-        } else {
-            RAYWHITE
-        };
-        webhacks::draw_circle(pos, 10.0, color);
-    }
-
-    fn screen_position(&self, path: &[Vector2]) -> Vector2 {
-        path_pos_to_screen_pos(self.position, path)
-    }
-}
-
-impl Turret {
-    fn new(position: Vector2) -> Turret {
-        Turret {
-            position,
-            dead: Bool::False(),
-            hover: Bool::False(),
-        }
-    }
-
-    fn update(&mut self, state: &State) {
-        let mouse_distance = self.position.dist(state.mouse_pos);
-        if mouse_distance < TURRET_RADIUS {
-            self.hover = Bool::True();
-        } else if mouse_distance < 1.5 * TURRET_RADIUS {
-            //
-        } else {
-            self.hover = Bool::False();
-        }
-        if self.hover.bool() && state.mouse_btn_pressed.bool() {
-            // despawn the turret
-            self.dead = Bool::True();
-        }
-    }
-
-    fn draw_background(&self, _index: usize, _state: &State) {
-        webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
-    }
-
-    fn draw_foreground(&self, _index: usize, _state: &State) {
-        // let mouse_distance = self.position.dist(_state.mouse_pos);
-        // // let radius = if mouse_distance < 1.5 * TURRET_RADIUS {
-        // //     TURRET_RADIUS * 1.5
-        // // } else {
-        // //     TURRET_RADIUS
-        // // };
-        let radius = if self.hover.bool() {
-            TURRET_RADIUS * 1.5
-        } else {
-            TURRET_RADIUS
-        };
-        webhacks::draw_circle(self.position, radius, PINK);
-    }
-}
 
 #[repr(C, align(4))]
 #[derive(Clone)]
