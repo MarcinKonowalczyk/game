@@ -225,25 +225,25 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.fillStyle = color;
             CTX.fillRect(0, 0, CTX.canvas.width, CTX.canvas.height);
         },
-        MeasureText: (text_ptr, fontSize) => {
-            const buffer = WASM.instance.exports.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            CTX.font = `${fontSize}px grixel`;
-            return CTX.measureText(text).width;
-        },
-        DrawText: (text_ptr, posX, posY, fontSize, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            const color = getColor(buffer, color_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            CTX.fillStyle = color;
-            CTX.font = `${fontSize}px grixel`;
-            const lines = text.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                CTX.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
-            }
-        },
+        // MeasureText: (text_ptr, fontSize) => {
+        //     const buffer = WASM.instance.exports.memory.buffer;
+        //     const text = getString(buffer, text_ptr);
+        //     fontSize *= FONT_SCALE_MAGIC;
+        //     CTX.font = `${fontSize}px grixel`;
+        //     return CTX.measureText(text).width;
+        // },
+        // DrawText: (text_ptr, posX, posY, fontSize, color_ptr) => {
+        //     const buffer = WF.memory.buffer;
+        //     const text = getString(buffer, text_ptr);
+        //     const color = getColor(buffer, color_ptr);
+        //     fontSize *= FONT_SCALE_MAGIC;
+        //     CTX.fillStyle = color;
+        //     CTX.font = `${fontSize}px grixel`;
+        //     const lines = text.split('\n');
+        //     for (var i = 0; i < lines.length; i++) {
+        //         CTX.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+        //     }
+        // },
         LoadFont: (file_path_ptr) => {
             const buffer = WF.memory.buffer;
             const file_path = getString(buffer, file_path_ptr);
@@ -292,13 +292,38 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         IsFontLoaded: (font) => {
             return FONTS.has(font);
         },
-        DrawTextEx: (font, text_ptr, posX, posY, fontSize, spacing, color_ptr) => {
+        DrawTextEx: (font, text_ptr, position_ptr, fontSize, spacing, color_ptr) => {
             const buffer = WF.memory.buffer;
             const text = getString(buffer, text_ptr);
             const color = getColor(buffer, color_ptr);
+            const pos = getVector2(buffer, position_ptr);
             fontSize *= FONT_SCALE_MAGIC;
-            CTX.fillStyle = color;
+            var font_name = FONTS.get(font);
+            if (font_name === undefined) {
+                console.log("Font not found", FONTS, font);
+                return;
+            }
 
+            CTX.font = `${fontSize}px ${font_name}`;
+
+            CTX.fillStyle = color;
+            const lines = text.split('\n');
+
+            for (var i = 0; i < lines.length; i++) {
+                const chars = lines[i].split('');
+                let x = pos.x;
+                for (var j = 0; j < chars.length; j++) {
+                    CTX.fillText(chars[j], x, pos.y + fontSize + (i * fontSize));
+                    x += CTX.measureText(chars[j]).width + spacing;
+                }
+                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+            }
+        },
+        // pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
+        MeasureTextEx: (result_ptr, font, text_ptr, fontSize, spacing) => {
+            const buffer = WF.memory.buffer;
+            const text = getString(buffer, text_ptr);
+            fontSize *= FONT_SCALE_MAGIC;
             var font_name = FONTS.get(font);
             if (font_name === undefined) {
                 console.log("Font not found", FONTS, font);
@@ -308,16 +333,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.font = `${fontSize}px ${font_name}`;
 
             const lines = text.split('\n');
+            let width = 0;
+            let height = 0;
 
             for (var i = 0; i < lines.length; i++) {
                 const chars = lines[i].split('');
-                let x = posX;
+                let x = 0;
                 for (var j = 0; j < chars.length; j++) {
-                    CTX.fillText(chars[j], x, posY + fontSize + (i * fontSize));
                     x += CTX.measureText(chars[j]).width + spacing;
                 }
-                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+                width = Math.max(width, x);
+                height += fontSize;
             }
+
+            const out = new Float32Array(buffer, result_ptr, 2);
+            out[0] = width;
+            out[1] = height;
         },
         DrawLine: (startPosX, startPosY, endPosX, endPosY, color_ptr) => {
             const buffer = WF.memory.buffer;
@@ -382,18 +413,20 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
             return TEXTURES[id].complete;
         },
-        // ffi::GetTextureShape(texture, &mut vector)
-        GetTextureShape: (id, vector_ptr) => {
+        // ffi::GetTextureShape(texture: u32) -> Vector2
+        GetTextureShape: (result_ptr, id) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
-            const vector = new Float32Array(buffer, vector_ptr, 2);
-            vector[0] = img.width;
-            vector[1] = img.height;
+            const result = new Float32Array(buffer, result_ptr, 2);
+            result[0] = img.width;
+            result[1] = img.height;
         },
-        DrawTextureEx: (id, x, y, rotation, scale, _color_ptr) => {
+        DrawTextureEx: (id, position_ptr, rotation, scale, _color_ptr) => {
             const img = TEXTURES[id];
+            const buffer = WF.memory.buffer;
+            const position = getVector2(buffer, position_ptr);
             CTX.save();
-            CTX.translate(x, y);
+            CTX.translate(position.x, position.y);
             CTX.rotate(rotation);
             CTX.scale(scale, scale);
             CTX.drawImage(img, 0, 0);
@@ -616,6 +649,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           [fffffb]*{enemies}
           b{mute}
           [[f{x}f{y}]{position}b{dead}b{hover}]*{turrets}
+          u{life}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);

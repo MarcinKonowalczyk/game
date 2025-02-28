@@ -104,18 +104,17 @@ pub mod ffi {
         pub fn DrawTextEx(
             font: Font,
             text: *const i8,
-            positionX: i32,
-            positionY: i32,
+            position: *const Vector2,
             fontSize: i32,
             spacing: f32,
             tint: *const Color,
         );
+        pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
         pub fn LoadTexture(file_path: *const i8) -> Texture;
-        pub fn GetTextureShape(texture: Texture, vector: *mut Vector2);
+        pub fn GetTextureShape(texture: Texture) -> Vector2;
         pub fn DrawTextureEx(
             texture: Texture,
-            positionX: i32,
-            positionY: i32,
+            position: *const Vector2,
             rotation: f32,
             scale: f32,
             tint: *const Color,
@@ -158,14 +157,7 @@ pub fn draw_texture_ex(
 ) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextureEx(
-            texture,
-            position.x as i32,
-            position.y as i32,
-            rotation,
-            scale,
-            addr_of!(tint),
-        )
+        ffi::DrawTextureEx(texture, addr_of!(position), rotation, scale, addr_of!(tint))
     }
     #[cfg(feature = "native")]
     unsafe {
@@ -183,21 +175,28 @@ pub fn log(msg: String) {
     println!("{}", msg);
 }
 
-pub fn draw_text(font: Font, text: &str, x: i32, y: i32, size: i32, color: Color) {
+pub fn draw_text(font: Font, text: &str, position: Vector2, size: i32, spacing: f32, color: Color) {
     #[cfg(feature = "native")]
     unsafe {
         raylib::DrawTextEx(
             font,
             cstr!(text),
-            Vector2::new(x as f32, y as f32).into(),
+            position.into(),
             size as f32,
-            2.0,
+            spacing,
             color,
         );
     }
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextEx(font, cstr!(text), x, y, size, 2.0, addr_of!(color))
+        ffi::DrawTextEx(
+            font,
+            cstr!(text),
+            addr_of!(position),
+            size,
+            spacing,
+            addr_of!(color),
+        )
     }
 }
 
@@ -213,20 +212,18 @@ pub fn update_music_stream(music: Music) {
 }
 
 pub fn get_texture_shape(texture: Texture) -> Vector2 {
-    let mut vector = Vector2 { x: 0.0, y: 0.0 };
-
     #[cfg(feature = "web")]
     unsafe {
-        ffi::GetTextureShape(texture, &mut vector)
+        ffi::GetTextureShape(texture)
     }
 
     #[cfg(feature = "native")]
     {
-        vector.x = texture.width as f32;
-        vector.y = texture.height as f32;
+        Vector2 {
+            x: texture.width as f32,
+            y: texture.height as f32,
+        }
     }
-
-    vector
 }
 
 pub fn is_mouse_button_down(button: i32) -> bool {
@@ -495,4 +492,13 @@ pub fn is_key_pressed(key: raylib::KeyboardKey) -> bool {
     unsafe {
         raylib::IsKeyPressed(key)
     }
+}
+
+pub fn measure_text(font: Font, text: &str, font_size: i32, spacing: f32) -> Vector2 {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::MeasureTextEx(font, cstr!(text), font_size, spacing).into()
+    }
+    #[cfg(feature = "native")]
+    unsafe { raylib::MeasureTextEx(font, cstr!(text), font_size as f32, spacing) }.into()
 }

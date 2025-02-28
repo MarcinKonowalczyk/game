@@ -48,12 +48,6 @@ impl Turret {
     }
 
     pub fn draw_foreground(&self, _index: usize, _state: &State) {
-        // let mouse_distance = self.position.dist(_state.mouse_pos);
-        // // let radius = if mouse_distance < 1.5 * TURRET_RADIUS {
-        // //     TURRET_RADIUS * 1.5
-        // // } else {
-        // //     TURRET_RADIUS
-        // // };
         let radius = if self.hover.bool() {
             TURRET_RADIUS * 1.5
         } else {

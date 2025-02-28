@@ -1,6 +1,6 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
-use raylib_wasm::Color;
 use raylib_wasm::{self as raylib, BLUE};
+use raylib_wasm::{cstr, Color};
 use webhacks::Bool;
 
 mod anim;
@@ -24,7 +24,8 @@ const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
 const SPAWN_INTERVAL: f32 = 1.0;
-const SPEED_ENEMY: f32 = 340.0;
+// const SPEED_ENEMY: f32 = 340.0;
+const SPEED_ENEMY: f32 = 1340.0;
 
 const TURRET_RADIUS: f32 = 10.0;
 const ACTIVE_RADIUS: f32 = 100.0;
@@ -34,6 +35,13 @@ const ALPHA_BEIGE: Color = Color {
     g: 176,
     b: 131,
     a: 100,
+};
+
+const ALPHA_BLACK: Color = Color {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 200,
 };
 
 #[repr(C, align(4))]
@@ -61,6 +69,7 @@ pub struct State {
     pub mute: Bool,
     pub turrets_n: u32,
     pub turrets_arr: *mut Turret,
+    pub life: u32,
     pub distances: *mut Array2D,
 }
 
@@ -222,6 +231,7 @@ pub fn game_init() -> State {
         turrets_n: turrets_n,
         turrets_arr: turrets_arr,
         distances: distances_ptr,
+        life: 2,
     }
 }
 
@@ -312,6 +322,12 @@ pub fn game_load(state: &mut State) {
         } else {
             webhacks::set_music_volume(state.music, 1.0);
         }
+
+        let texture_shape = webhacks::get_texture_shape(state.texture);
+        webhacks::log(format!(
+            "texture shape: [{}, {}]",
+            texture_shape.x, texture_shape.y
+        ));
     }
 }
 
@@ -408,7 +424,7 @@ fn draw_slime_at_pos(
     // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
-fn process_entities(state: &mut State) {
+fn update_entities(state: &mut State) {
     let mut enemies = state.get_enemies().unwrap_or_default().to_vec();
     let mut turrets = state.get_turrets().unwrap_or_default().to_vec();
 
@@ -421,9 +437,13 @@ fn process_entities(state: &mut State) {
         enemies.push(new_enemy);
     }
 
+    let mut n_dead = 0;
     for enemy in enemies.iter_mut() {
         enemy.update(state);
+        n_dead += enemy.dead.bool() as u32;
     }
+
+    state.life -= std::cmp::min(n_dead, state.life);
 
     enemies = enemies
         .into_iter()
@@ -542,14 +562,28 @@ fn draw_text(state: &State) {
         x = state.slime_pos.x.round(),
         y = state.slime_pos.y.round()
     };
-    webhacks::draw_text(state.font, &slime_pos_text, 10, 10, 20, RAYWHITE);
+    webhacks::draw_text(
+        state.font,
+        &slime_pos_text,
+        Vector2::new(10.0, 10.0),
+        20,
+        2.0,
+        RAYWHITE,
+    );
 
     let mouse_pos = format! {
         "mouse: [{x}, {y}]",
         x = state.mouse_pos.x.round(),
         y = state.mouse_pos.y.round()
     };
-    webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
+    webhacks::draw_text(
+        state.font,
+        &mouse_pos,
+        Vector2::new(10.0, 30.0),
+        20,
+        2.0,
+        RAYWHITE,
+    );
 
     // Draw the music indicator in the top right corner
     webhacks::draw_text(
@@ -559,11 +593,20 @@ fn draw_text(state: &State) {
         } else {
             "sound: on"
         },
-        WINDOW_WIDTH - 105,
-        10,
+        Vector2::new(WINDOW_WIDTH as f32 - 105.0, 10.0),
         20,
+        2.0,
         RAYWHITE,
     );
+
+    // draw life
+    let path = state.get_path();
+    let life_text = format!("life: {}", state.life);
+    let font_size = 30;
+    let text_size = webhacks::measure_text(state.font, &life_text, font_size, 2.0);
+    let mut last = path[path.len() - 1].clone();
+    let pos = last.add(&Vector2::new(-text_size.x as f32 / 2.0, 20.0));
+    webhacks::draw_text(state.font, &life_text, *pos, font_size, 2.0, RAYWHITE);
 }
 
 pub type GameFrame = fn(state: &mut State);
@@ -573,10 +616,14 @@ pub fn game_frame(state: &mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    process_entities(state);
+    update_entities(state);
 
-    handle_keys(state);
-    handle_mouse(state);
+    let game_over = state.life == 0;
+
+    if !game_over {
+        handle_keys(state);
+        handle_mouse(state);
+    }
 
     unsafe { raylib::BeginDrawing() };
 
@@ -594,6 +641,32 @@ pub fn game_frame(state: &mut State) {
         draw_entities_foreground(state);
 
         draw_mouse(state);
+
+        if game_over {
+            // draw a shaded rectangle over the screen
+            unsafe {
+                raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
+            }
+
+            // draw the game over text
+            let text = "Game Over!";
+            let font_size = 50;
+            let text_size = webhacks::measure_text(state.font, text, font_size, 2.0);
+            let position = Vector2::new(
+                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+                ((WINDOW_HEIGHT - font_size) / 2) as f32,
+            );
+            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+
+            let text = "Press R to restart";
+            let font_size = 20;
+            let text_size = webhacks::measure_text(state.font, text, font_size, 1.0);
+            let position = Vector2::new(
+                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+                ((WINDOW_HEIGHT - font_size) / 2 + 50) as f32,
+            );
+            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+        }
     }
 
     unsafe { raylib::EndDrawing() };
