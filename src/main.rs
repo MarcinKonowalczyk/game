@@ -56,7 +56,58 @@ fn load_fn<'lib, T>(lib: &'lib Library, symbol: &str) -> Symbol<'lib, T> {
         .unwrap()
 }
 
+#[cfg(feature = "native")]
+mod log {
+    use raylib_wasm::*;
+
+    pub const ALL: i32 = 0;
+    pub const TRACE: i32 = 1;
+    pub const DEBUG: i32 = 2;
+    pub const INFO: i32 = 3;
+    pub const WARNING: i32 = 4;
+    pub const ERROR: i32 = 5;
+    pub const FATAL: i32 = 6;
+    pub const USER: i32 = 8; // custom user log level
+    pub const NONE: i32 = 999;
+
+    const GREEN: &str = "\x1b[92m";
+    const YELLOW: &str = "\x1b[93m";
+    const RED: &str = "\x1b[91m";
+    const BLUE: &str = "\x1b[94m";
+    const CYAN: &str = "\x1b[96m";
+    const MAGENTA: &str = "\x1b[95m";
+    const RESET: &str = "\x1b[0m";
+
+    #[no_mangle]
+    pub unsafe extern "C" fn my_log_callback(
+        log_level: i32,
+        text: *const i8,
+        _args: *mut __va_list_tag,
+    ) {
+        let text = unsafe { std::ffi::CStr::from_ptr(text) };
+        let text = text.to_str().unwrap();
+
+        let text = match log_level {
+            USER => format!("[{}USER{}] : {}", BLUE, RESET, text),
+            INFO => format!("[{}INFO{}] : {}", GREEN, RESET, text),
+            ERROR => format!("[{}ERROR{}] : {}", RED, RESET, text),
+            WARNING => format!("[{}WARN{}] : {}", YELLOW, RESET, text),
+            DEBUG => format!("[{}DEBUG{}] : {}", CYAN, RESET, text),
+            TRACE => format!("[{}TRACE{}] : {}", MAGENTA, RESET, text),
+            _ => format!("{}", text),
+        };
+
+        println!("{}", text);
+    }
+}
+
 fn start() {
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib_wasm::SetTraceLogCallback(Some(log::my_log_callback));
+        raylib_wasm::SetTraceLogLevel(log::ALL);
+    }
+
     #[cfg(feature = "native")]
     let mut lib = load_lib(GAME_PATH);
 
@@ -67,9 +118,18 @@ fn start() {
     let mut game_load = load_fn::<Symbol<GameLoad>>(&lib, "game_load");
 
     let mut state = game_init();
+
+    // println!("Starting game loop");
+    // println!("Press 'P' to hot-reload the game");
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib_wasm::TraceLog(log::USER, cstr!("Starting game loop"));
+        raylib_wasm::TraceLog(log::USER, cstr!("Press 'P' to hot-reload the game"));
+    }
+
     while !unsafe { WindowShouldClose() } {
         #[cfg(feature = "native")]
-        if unsafe { IsKeyPressed(Key::R) } {
+        if unsafe { IsKeyPressed(Key::P) } {
             drop(game_frame);
             drop(game_load);
             drop(lib);
