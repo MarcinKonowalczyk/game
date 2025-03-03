@@ -1,6 +1,11 @@
-use raylib::{cstr, Color, Vector2};
+use raylib::{cstr, Color};
 use raylib_wasm as raylib;
 use std::ops::Not;
+
+#[cfg(feature = "native")]
+use crate::log::VaList;
+
+use crate::vec2::Vector2;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
@@ -96,23 +101,23 @@ pub mod ffi {
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
         pub fn IsMouseButtonDown(button: i32) -> bool;
         pub fn IsMouseButtonPressed(button: i32) -> bool;
-        pub fn ConsoleLog(msg: *const i8);
+        pub fn ConsoleLog(msg: *const i8, args: *const i8);
+        pub fn Log(level: i32, msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
         pub fn DrawTextEx(
             font: Font,
             text: *const i8,
-            positionX: i32,
-            positionY: i32,
+            position: *const Vector2,
             fontSize: i32,
             spacing: f32,
             tint: *const Color,
         );
+        pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
         pub fn LoadTexture(file_path: *const i8) -> Texture;
-        pub fn GetTextureShape(texture: Texture, vector: *mut Vector2);
+        pub fn GetTextureShape(texture: Texture) -> Vector2;
         pub fn DrawTextureEx(
             texture: Texture,
-            positionX: i32,
-            positionY: i32,
+            position: *const Vector2,
             rotation: f32,
             scale: f32,
             tint: *const Color,
@@ -142,6 +147,8 @@ pub mod ffi {
         );
         pub fn SetMusicVolume(music: Music, volume: f32);
         pub fn IsKeyPressed(key: i32) -> bool;
+        pub fn SetTraceLogCallback(callback_name: *const i8);
+        pub fn SetTraceLogLevel(level: i32);
     }
 }
 
@@ -155,49 +162,80 @@ pub fn draw_texture_ex(
 ) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextureEx(
-            texture,
-            position.x as i32,
-            position.y as i32,
-            rotation,
-            scale,
-            addr_of!(tint),
-        )
+        ffi::DrawTextureEx(texture, addr_of!(position), rotation, scale, addr_of!(tint))
     }
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawTextureEx(texture, position, rotation, scale, tint)
+        raylib::DrawTextureEx(texture, position.into(), rotation, scale, tint)
     }
 }
 
-#[allow(non_snake_case, dead_code)]
-pub fn log(msg: String) {
+#[cfg(feature = "web")]
+const SPECIAL: &str = "<END>";
+
+#[allow(unused)]
+pub fn _console_log_args(msg: &str, args: Option<Vec<&str>>) {
+    #[cfg(feature = "web")]
+    {
+        let args = args.unwrap_or(vec![]);
+        let mut args_str = args.join("\0");
+        if !args.is_empty() {
+            args_str.push_str("\0");
+        }
+        args_str.push_str(SPECIAL);
+        args_str.push_str("\0");
+        let c_args = args_str.as_ptr();
+        unsafe { ffi::ConsoleLog(cstr!(msg), c_args as *const i8) };
+    }
+    // we should not use this function in native mode, but lets not fall over
+    #[cfg(feature = "native")]
+    panic!("console_log should not be called in native mode! use the game::log module instead");
+}
+
+// for now we support only strings as additional arguments
+#[allow(unused)]
+pub fn _console_log(msg: &str) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::ConsoleLog(cstr!(msg))
+        ffi::ConsoleLog(cstr!(msg), std::ptr::null());
     };
     #[cfg(feature = "native")]
-    println!("{}", msg);
+    panic!("console_log should not be called in native mode! use the game::log module instead");
 }
 
-pub fn draw_text(font: Font, text: &str, x: i32, y: i32, size: i32, color: Color) {
+pub fn log(level: i32, msg: &str) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::Log(level, cstr!(msg))
+    };
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::TraceLog(level, cstr!(msg));
+    }
+}
+
+pub fn draw_text(font: Font, text: &str, position: Vector2, size: i32, spacing: f32, color: Color) {
     #[cfg(feature = "native")]
     unsafe {
         raylib::DrawTextEx(
             font,
             cstr!(text),
-            Vector2 {
-                x: x as f32,
-                y: y as f32,
-            },
+            position.into(),
             size as f32,
-            2.0,
+            spacing,
             color,
         );
     }
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTextEx(font, cstr!(text), x, y, size, 2.0, addr_of!(color))
+        ffi::DrawTextEx(
+            font,
+            cstr!(text),
+            addr_of!(position),
+            size,
+            spacing,
+            addr_of!(color),
+        )
     }
 }
 
@@ -213,20 +251,18 @@ pub fn update_music_stream(music: Music) {
 }
 
 pub fn get_texture_shape(texture: Texture) -> Vector2 {
-    let mut vector = Vector2 { x: 0.0, y: 0.0 };
-
     #[cfg(feature = "web")]
     unsafe {
-        ffi::GetTextureShape(texture, &mut vector)
+        ffi::GetTextureShape(texture)
     }
 
     #[cfg(feature = "native")]
     {
-        vector.x = texture.width as f32;
-        vector.y = texture.height as f32;
+        Vector2 {
+            x: texture.width as f32,
+            y: texture.height as f32,
+        }
     }
-
-    vector
 }
 
 pub fn is_mouse_button_down(button: i32) -> bool {
@@ -463,7 +499,7 @@ pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color:
     }
     #[cfg(feature = "native")]
     unsafe {
-        raylib::DrawLineEx(start_pos, end_pos, thickness, color);
+        raylib::DrawLineEx(start_pos.into(), end_pos.into(), thickness, color);
     }
 }
 
@@ -472,7 +508,7 @@ pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
 }
 
 pub fn get_mouse_position() -> Vector2 {
-    unsafe { raylib::GetMousePosition() }
+    unsafe { raylib::GetMousePosition() }.into()
 }
 
 pub fn set_music_volume(music: Music, volume: f32) {
@@ -494,5 +530,45 @@ pub fn is_key_pressed(key: raylib::KeyboardKey) -> bool {
     #[cfg(feature = "native")]
     unsafe {
         raylib::IsKeyPressed(key)
+    }
+}
+
+pub fn measure_text(font: Font, text: &str, font_size: i32, spacing: f32) -> Vector2 {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::MeasureTextEx(font, cstr!(text), font_size, spacing).into()
+    }
+    #[cfg(feature = "native")]
+    unsafe { raylib::MeasureTextEx(font, cstr!(text), font_size as f32, spacing) }.into()
+}
+
+#[cfg(feature = "native")]
+pub type LogCallback = unsafe extern "C" fn(i32, *const i8, *mut VaList);
+
+#[cfg(feature = "web")]
+pub type LogCallback = fn(i32, *const i8);
+
+#[allow(unused)]
+pub fn set_trace_log_callback(callback: Option<LogCallback>, callback_name: &str) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetTraceLogCallback(cstr!(callback_name));
+    }
+
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetTraceLogCallback(callback);
+    }
+}
+
+#[allow(unused)]
+pub fn set_log_level(level: i32) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetTraceLogLevel(level);
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetTraceLogLevel(level);
     }
 }

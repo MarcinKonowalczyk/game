@@ -148,6 +148,7 @@ function onResize() {
     CONTAINER.style.height = GAME.style.height = h + "px";
     CONTAINER.style.top = Math.floor((window.innerHeight - h) / 2) + "px";
     CONTAINER.style.left = Math.floor((window.innerWidth - w) / 2) + "px";
+
 }
 
 window.onresize = onResize;
@@ -197,20 +198,133 @@ let WF = undefined;
 let QUIT = undefined;
 let _PREV_TIMESTAMP = undefined;
 let TARGET_FPS = undefined;
+let LOG_CALLBACK = undefined;
+let LOG_LEVEL = 3; // default to 3=INFO
+
+// Add String.format
+// https://stackoverflow.com/a/4673436
+if (!String.prototype.format) {
+    String.prototype.format = function () {
+        var args = arguments;
+        return this.replace(/{(\d+)}/g, function (match, number) {
+            return typeof args[number] != 'undefined'
+                ? args[number]
+                : match
+                ;
+        });
+    };
+}
+
+function wasm_alloc_string(msg) {
+    let utf8_encode = new TextEncoder();
+    let msg_bytearray = utf8_encode.encode(msg);
+    let N = msg_bytearray.length;
+    let text_ptr = WF.from_js_malloc(N + 1);
+    let text = new Uint8Array(WF.memory.buffer, text_ptr, N + 1);
+    text.set(msg_bytearray);
+    text[N] = 0; // null-terminated
+    return [text_ptr, N];
+}
+
+function wasm_free_string(text_ptr, length) {
+    WF.from_js_free(text_ptr, length + 1);
+}
+
+function _log(level, msg, text_ptr) {
+    if (level < LOG_LEVEL) {
+        // skip log if below log level
+        return;
+    }
+    if (LOG_CALLBACK !== undefined) {
+        var alloced = false;
+        if (text_ptr === undefined) {
+            var N;
+            [text_ptr, N] = wasm_alloc_string(msg);
+            alloced = true;
+        }
+        // NOTE: we pass the pointer, not the text
+        // console.log("calling", LOG_CALLBACK, level, text_ptr, WF[LOG_CALLBACK]);
+        WF[LOG_CALLBACK](level, text_ptr);
+        if (alloced) {
+            wasm_free_string(text_ptr, N);
+        }
+    } else {
+        let text = getString(WF.memory.buffer, text_ptr);
+        console.log(level, text);
+    }
+}
+
+const LOG_LEVELS = {
+    "ALL": 0,
+    "TRACE": 1,
+    "DEBUG": 2,
+    "INFO": 3,
+    "WARNING": 4,
+    "ERROR": 5,
+    "FATAL": 6,
+    "NONE": 999,
+}
+
+let info = (msg) => _log(LOG_LEVELS.INFO, msg);
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
-        ConsoleLog: (text_ptr) => console.log(getString(WF.memory.buffer, text_ptr)),
+        // pub fn ConsoleLog(msg: *const i8, n: i32, args: *const *const i8);
+        ConsoleLog: (text_ptr, args_ptr) => {
+            let buffer = WF.memory.buffer;
+            let args = new Array();
+            if (args_ptr !== 0) {
+                let offset = 0;
+                const special = "<END>";
+                while (true) {
+                    let next_arg = getString(buffer, args_ptr + offset);
+                    if (next_arg === special) break;
+                    args.push(next_arg);
+                    offset += next_arg.length + 1;
+                }
+            }
+            if (args.length === 0) {
+                console.log(getString(buffer, text_ptr));
+            } else {
+                console.log(getString(buffer, text_ptr), ...args);
+            }
+        },
+        Log: (level, text_ptr) => _log(level, "", text_ptr),
+        // pub fn SetTraceLogCallback(callback_name: *const i8) -> ();
+        SetTraceLogCallback: (callback_name_ptr) => {
+            const buffer = WF.memory.buffer;
+            var func_name = getString(buffer, callback_name_ptr);
+            let parts = func_name.split('::');
+            func_name = parts.pop();
+
+            // check if we have a function with that name in WF
+            if (func_name === "") {
+                // unset the callback
+                // console.log("Unsetting logging callback", { func_name });
+                info("Unsetting logging callback: func_name={0}".format(func_name));
+                LOG_CALLBACK = undefined;
+            } else if (WF[func_name] === undefined) {
+                console.error("Function not found", { func_name });
+            } else {
+                // console.log("Setting logging callback", { func_name });
+                LOG_CALLBACK = func_name
+                info("Setting logging callback: func_name={0}".format(func_name));
+            }
+        },
+        SetTraceLogLevel: (level) => {
+            LOG_LEVEL = level;
+        },
         GetMousePositionX: () => GAME.mouseX,
         GetMousePositionY: () => GAME.mouseY,
         IsMouseButtonDown: (button) => GAME.mouse_state[button],
         IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
-        InitWindow: (w, h, t) => {
-            console.log("InitWindow", { w, h, t });
-            GAME.width = w;
-            GAME.height = h;
-            const buffer = WF.memory.buffer;
-            document.title = getString(buffer, t);
+        InitWindow: (width, height, title_ptr) => {
+            let title = getString(WF.memory.buffer, title_ptr);
+            // console.log("InitWindow", { width, height, title });
+            info("InitWindow: width={0}, height={1}, title={2}".format(width, height, title));
+            GAME.width = width;
+            GAME.height = height;
+            document.title = title;
         },
         BeginDrawing: () => { },
         CloseWindow: () => { },
@@ -224,32 +338,33 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.fillStyle = color;
             CTX.fillRect(0, 0, CTX.canvas.width, CTX.canvas.height);
         },
-        MeasureText: (text_ptr, fontSize) => {
-            const buffer = WASM.instance.exports.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            CTX.font = `${fontSize}px grixel`;
-            return CTX.measureText(text).width;
-        },
-        DrawText: (text_ptr, posX, posY, fontSize, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            const color = getColor(buffer, color_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            CTX.fillStyle = color;
-            CTX.font = `${fontSize}px grixel`;
-            const lines = text.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                CTX.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
-            }
-        },
+        // MeasureText: (text_ptr, fontSize) => {
+        //     const buffer = WASM.instance.exports.memory.buffer;
+        //     const text = getString(buffer, text_ptr);
+        //     fontSize *= FONT_SCALE_MAGIC;
+        //     CTX.font = `${fontSize}px grixel`;
+        //     return CTX.measureText(text).width;
+        // },
+        // DrawText: (text_ptr, posX, posY, fontSize, color_ptr) => {
+        //     const buffer = WF.memory.buffer;
+        //     const text = getString(buffer, text_ptr);
+        //     const color = getColor(buffer, color_ptr);
+        //     fontSize *= FONT_SCALE_MAGIC;
+        //     CTX.fillStyle = color;
+        //     CTX.font = `${fontSize}px grixel`;
+        //     const lines = text.split('\n');
+        //     for (var i = 0; i < lines.length; i++) {
+        //         CTX.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+        //     }
+        // },
         LoadFont: (file_path_ptr) => {
             const buffer = WF.memory.buffer;
             const file_path = getString(buffer, file_path_ptr);
 
             var id = gen_asset_id();
 
-            console.log("Loading font", { id, file_path });
+            // console.log("Loading font", { id, file_path });
+            info("Loading font: id={0}, file_path={1}".format(id, file_path));
 
             // split at the last slash and at the last dot
             // let ext = file_path.split('.').pop();
@@ -291,13 +406,38 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         IsFontLoaded: (font) => {
             return FONTS.has(font);
         },
-        DrawTextEx: (font, text_ptr, posX, posY, fontSize, spacing, color_ptr) => {
+        DrawTextEx: (font, text_ptr, position_ptr, fontSize, spacing, color_ptr) => {
             const buffer = WF.memory.buffer;
             const text = getString(buffer, text_ptr);
             const color = getColor(buffer, color_ptr);
+            const pos = getVector2(buffer, position_ptr);
             fontSize *= FONT_SCALE_MAGIC;
-            CTX.fillStyle = color;
+            var font_name = FONTS.get(font);
+            if (font_name === undefined) {
+                console.log("Font not found", FONTS, font);
+                return;
+            }
 
+            CTX.font = `${fontSize}px ${font_name}`;
+
+            CTX.fillStyle = color;
+            const lines = text.split('\n');
+
+            for (var i = 0; i < lines.length; i++) {
+                const chars = lines[i].split('');
+                let x = pos.x;
+                for (var j = 0; j < chars.length; j++) {
+                    CTX.fillText(chars[j], x, pos.y + fontSize + (i * fontSize));
+                    x += CTX.measureText(chars[j]).width + spacing;
+                }
+                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+            }
+        },
+        // pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
+        MeasureTextEx: (result_ptr, font, text_ptr, fontSize, spacing) => {
+            const buffer = WF.memory.buffer;
+            const text = getString(buffer, text_ptr);
+            fontSize *= FONT_SCALE_MAGIC;
             var font_name = FONTS.get(font);
             if (font_name === undefined) {
                 console.log("Font not found", FONTS, font);
@@ -307,16 +447,22 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.font = `${fontSize}px ${font_name}`;
 
             const lines = text.split('\n');
+            let width = 0;
+            let height = 0;
 
             for (var i = 0; i < lines.length; i++) {
                 const chars = lines[i].split('');
-                let x = posX;
+                let x = 0;
                 for (var j = 0; j < chars.length; j++) {
-                    CTX.fillText(chars[j], x, posY + fontSize + (i * fontSize));
                     x += CTX.measureText(chars[j]).width + spacing;
                 }
-                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+                width = Math.max(width, x);
+                height += fontSize;
             }
+
+            const out = new Float32Array(buffer, result_ptr, 2);
+            out[0] = width;
+            out[1] = height;
         },
         DrawLine: (startPosX, startPosY, endPosX, endPosY, color_ptr) => {
             const buffer = WF.memory.buffer;
@@ -359,7 +505,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         LoadTexture: (file_path_ptr) => {
             var id = gen_asset_id();
-            console.log("Loading texture", { id, file_path });
+            // console.log("Loading texture", { id, file_path });
+            info("Loading texture: id={0}, file_path={1}".format(id, getString(WF.memory.buffer, file_path_ptr)));
 
             const buffer = WF.memory.buffer;
             const file_path = getString(buffer, file_path_ptr);
@@ -381,18 +528,20 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             }
             return TEXTURES[id].complete;
         },
-        // ffi::GetTextureShape(texture, &mut vector)
-        GetTextureShape: (id, vector_ptr) => {
+        // ffi::GetTextureShape(texture: u32) -> Vector2
+        GetTextureShape: (result_ptr, id) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
-            const vector = new Float32Array(buffer, vector_ptr, 2);
-            vector[0] = img.width;
-            vector[1] = img.height;
+            const result = new Float32Array(buffer, result_ptr, 2);
+            result[0] = img.width;
+            result[1] = img.height;
         },
-        DrawTextureEx: (id, x, y, rotation, scale, _color_ptr) => {
+        DrawTextureEx: (id, position_ptr, rotation, scale, _color_ptr) => {
             const img = TEXTURES[id];
+            const buffer = WF.memory.buffer;
+            const position = getVector2(buffer, position_ptr);
             CTX.save();
-            CTX.translate(x, y);
+            CTX.translate(position.x, position.y);
             CTX.rotate(rotation);
             CTX.scale(scale, scale);
             CTX.drawImage(img, 0, 0);
@@ -405,7 +554,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const destRec = getRectangle(buffer, destRec_ptr);
             CTX.save();
             CTX.translate(destRec.x, destRec.y);
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 0, 0, destRec.width, destRec.height);
+            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 1.0, 1.0, destRec.width, destRec.height);
             CTX.restore();
         },
         GetScreenWidth: () => CTX.canvas.width,
@@ -444,7 +593,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const file_path = getString(buffer, file_path_ptr);
 
             let id = gen_asset_id();
-            console.log("Loading music stream", { id, file_path });
+            // console.log("Loading music stream", { id, file_path });
+            info("Loading music stream: id={0}, file_path={1}".format(id, file_path));
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
@@ -480,7 +630,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const file_path = getString(buffer, file_path_ptr);
 
             var id = gen_asset_id();
-            console.log("Loading image", { id, file_path });
+            // console.log("Loading image", { id, file_path });
+            info("Loading image: id={0}, file_path={1}".format(id, file_path));
 
             let img = new Image();
 
@@ -514,11 +665,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const colors = new Uint8Array(WF.memory.buffer, WF.from_js_malloc(data.length), data.length);
             colors.set(data);
             let ptr = colors.byteOffset;
-            console.log("Loading image colors", { id, ptr, size: data.length });
+            // console.log("Loading image colors", { id, ptr, size: data.length });
+            info("Loading image colors: id={0}, ptr={1}, size={2}".format(id, ptr, data.length));
             return ptr;
         },
         UnloadImageColors: (ptr, size) => {
-            console.log("Unloading image colors", { ptr, size });
+            // console.log("Unloading image colors", { ptr, size });
+            info("Unloading image colors: ptr={0}, size={1}".format(ptr, size));
             WF.from_js_free(ptr, size);
         },
         IsImageLoaded: (id) => {
@@ -531,7 +684,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         // pub fn LoadTextureFromImage(image: u32) -> u32;
         LoadTextureFromImage: (id) => {
             var tex_id = gen_asset_id();
-            console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
+            // console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
+            info("Loading texture from image: image_id={0}, texture_id={1}".format(id, tex_id));
             const img = IMAGES[id];
             TEXTURES[tex_id] = img;
             return tex_id;
@@ -554,7 +708,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         // pub fn UnloadImage(image: Image) -> ();
         UnloadImage: (image_id) => {
-            console.log("Unloading image", image_id);
+            // console.log("Unloading image", image_id);
+            info("Unloading image: id={0}".format(image_id));
             delete IMAGES[image_id];
         },
         // pub fn GetTime() -> f64;
@@ -581,7 +736,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 }).then(w => {
     WASM = w;
     WF = w.instance.exports;
-    // console.log(w);
+    console.log(w);
 
     // window.addEventListener("keydown", keyDown);
     // window.addEventListener("keyup", keyUp);
@@ -601,7 +756,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           f{curr_time}
           f{prev_time}
           u{frame_count}
-          [f{x}f{y}f{width}f{height}]{rect}
+          [f{x}f{y}]{slime_pos}
           [f{x}f{y}]{mouse_pos}
           b{mouse_btn}
           b{mouse_btn_pressed}
@@ -610,11 +765,12 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           u{image}
           u{texture}
           [uuuu]*{anim_blobs}
-          [ f{x} f{y}] *{      path}
+          [f{x}f{y}]*{path}
           f{path_length}
           [fffffb]*{enemies}
           b{mute}
-          [[f{x}f{y}]{position}b{dead}]*{turrets}
+          [[f{x}f{y}]{position}b{dead}b{hover}]*{turrets}
+          u{life}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
         return wasm_to_struct(buffer, ptr, n_bytes, schema);

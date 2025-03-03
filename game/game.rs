@@ -1,15 +1,22 @@
-use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE, RED};
-use raylib_wasm::PINK;
-use raylib_wasm::{self as raylib, BEIGE, BLUE};
+use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
+use raylib_wasm::{self as raylib, Color, BLUE};
 use webhacks::Bool;
 
+mod log;
+
 mod anim;
+mod array2d;
 mod defer;
-mod vec2_ext;
+mod enemy;
+mod turret;
+mod vec2;
 mod webhacks;
 
-use crate::vec2_ext::Vector2;
-use crate::vec2_ext::Vector2Ext;
+use crate::array2d::Array2D;
+use crate::enemy::Enemy;
+use crate::turret::Turret;
+use crate::vec2::Vector2;
+use crate::vec2::Vector2Ext;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -19,133 +26,24 @@ const SPEED_BOOSTED: f32 = 1550.0;
 
 const SPAWN_INTERVAL: f32 = 1.0;
 const SPEED_ENEMY: f32 = 340.0;
+// const SPEED_ENEMY: f32 = 1340.0;
 
+const TURRET_RADIUS: f32 = 10.0;
 const ACTIVE_RADIUS: f32 = 100.0;
 
-#[derive(Clone, Debug)]
-pub struct Enemy {
-    pub position: f32, // position along the path in pixels
-    pub health: f32,
-    pub max_health: f32,
-    pub spawn_time: f32,
-    pub last_hit_time: f32,
-    pub dead: Bool,
-}
+const ALPHA_BEIGE: Color = Color {
+    r: 211,
+    g: 176,
+    b: 131,
+    a: 100,
+};
 
-#[derive(Clone, Debug)]
-pub struct Turret {
-    pub position: Vector2, // position along the path in pixels
-    pub dead: Bool,
-}
-
-fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
-    // path_pos in pixels
-
-    // walk along the path until we reach the correct position
-    let mut current_path_length = 0.0;
-    for i in 1..path.len() {
-        let p1 = path[i - 1];
-        let p2 = path[i];
-        let segment_length = p1.dist(p2);
-        if current_path_length + segment_length >= path_pos {
-            let segment_pos = (path_pos - current_path_length) / segment_length;
-            return p1.lerp(p2, segment_pos);
-        }
-        current_path_length += segment_length;
-    }
-
-    path[path.len() - 1]
-}
-
-impl Enemy {
-    fn new(time: f32) -> Enemy {
-        Enemy {
-            position: 0.0,
-            health: 100.0,
-            max_health: 100.0,
-            spawn_time: time,
-            last_hit_time: -1.0,
-            dead: Bool::False(),
-        }
-    }
-
-    fn update(&mut self, state: &State) {
-        let dt = state.curr_time - state.prev_time;
-        self.position += SPEED_ENEMY * dt;
-        if self.position >= state.path_length {
-            self.dead = Bool::True();
-        };
-    }
-
-    fn draw(&self, index: usize, state: &State) {
-        let path = state.get_path();
-        let pos = self.screen_position(path);
-        let volatile = state.get_volatile();
-        let distances = volatile.get_enemy_mouse_distances();
-        let distance = distances
-            .unwrap_or_default()
-            .get(index)
-            .cloned()
-            .unwrap_or(f32::MAX);
-        let color = if distance < ACTIVE_RADIUS {
-            PINK
-        } else {
-            RAYWHITE
-        };
-        webhacks::draw_circle(pos, 10.0, color);
-    }
-
-    fn screen_position(&self, path: &[Vector2]) -> Vector2 {
-        path_pos_to_screen_pos(self.position, path)
-    }
-}
-
-impl Turret {
-    fn new(position: Vector2) -> Turret {
-        Turret {
-            position,
-            dead: Bool::False(),
-        }
-    }
-
-    fn update(&mut self, _state: &State) {
-        //
-    }
-
-    fn draw(&self, _index: usize, _state: &State) {
-        webhacks::draw_circle(self.position, 10.0, PINK);
-    }
-}
-
-// Recomputed at the beginning of every frame
-#[repr(C, align(4))]
-#[derive(Clone, Debug)]
-pub struct VolatileState {
-    pub enemy_mouse_n: u32,
-    pub enemy_mouse_arr: *mut f32, // distance of each enemy from the mouse
-}
-
-impl VolatileState {
-    fn get_enemy_mouse_distances(&self) -> Option<Vec<f32>> {
-        if self.enemy_mouse_arr.is_null() {
-            None
-        } else {
-            let slice = unsafe {
-                std::slice::from_raw_parts(self.enemy_mouse_arr, self.enemy_mouse_n as usize)
-            };
-            Some(slice.to_vec())
-        }
-    }
-
-    fn set_enemy_mouse_distances(&mut self, distances: Vec<f32>) {
-        if !self.enemy_mouse_arr.is_null() {
-            free_malloced(self.enemy_mouse_n, self.enemy_mouse_arr);
-        }
-        let (enemy_mouse_n, enemy_mouse_arr) = clone_to_malloced(distances);
-        self.enemy_mouse_n = enemy_mouse_n;
-        self.enemy_mouse_arr = enemy_mouse_arr;
-    }
-}
+const ALPHA_BLACK: Color = Color {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 200,
+};
 
 #[repr(C, align(4))]
 #[derive(Clone)]
@@ -154,7 +52,7 @@ pub struct State {
     pub curr_time: f32,
     pub prev_time: f32,
     pub frame_count: u32,
-    pub rect: Rectangle,
+    pub slime_pos: Vector2,
     pub mouse_pos: Vector2,
     pub mouse_btn: Bool,
     pub mouse_btn_pressed: Bool,
@@ -172,58 +70,62 @@ pub struct State {
     pub mute: Bool,
     pub turrets_n: u32,
     pub turrets_arr: *mut Turret,
-    pub volatile: *mut VolatileState,
+    pub life: u32,
+    pub distances: *mut Array2D,
 }
 
 impl State {
-    fn get_turrets_vec(&self) -> Option<Vec<Turret>> {
+    fn get_turrets(&self) -> Option<&[Turret]> {
         if self.turrets_arr.is_null() {
             None
         } else {
             let slice =
                 unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
-            Some(slice.to_vec())
+            Some(slice)
         }
     }
 
-    fn set_turrets_vec(&mut self, turrets: Vec<Turret>) {
-        if !self.turrets_arr.is_null() {
-            free_malloced(self.turrets_n, self.turrets_arr);
-        }
+    fn set_turrets(&mut self, turrets: &[Turret]) {
+        free_malloced(self.turrets_n, self.turrets_arr);
         let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
         self.turrets_n = turrets_n;
         self.turrets_arr = turrets_arr;
     }
 
-    fn get_enemies_vec(&self) -> Option<Vec<Enemy>> {
+    fn get_enemies(&self) -> Option<&[Enemy]> {
         if self.enemies_arr.is_null() {
             None
         } else {
             let slice =
                 unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
-            Some(slice.to_vec())
+            Some(slice)
         }
     }
 
-    fn set_enemies_vec(&mut self, enemies: Vec<Enemy>) {
-        if !self.enemies_arr.is_null() {
-            free_malloced(self.enemies_n, self.enemies_arr);
-        }
-        let (enemies_n, enemies_arr) = clone_to_malloced(enemies);
+    fn set_enemies(&mut self, enemies: &[Enemy]) {
+        free_malloced(self.enemies_n, self.enemies_arr);
+        let (enemies_n, enemies_arr) = clone_to_malloced(&enemies);
         self.enemies_n = enemies_n;
         self.enemies_arr = enemies_arr;
     }
 
     fn get_path(&self) -> &[Vector2] {
-        unsafe { std::slice::from_raw_parts(self.path_arr, self.path_n as usize) }
+        if self.path_arr.is_null() {
+            return &[];
+        } else {
+            unsafe { std::slice::from_raw_parts(self.path_arr, self.path_n as usize) }
+        }
     }
 
-    fn get_volatile(&self) -> &VolatileState {
-        unsafe { &*self.volatile }
+    fn get_distances(&self) -> &Array2D {
+        unsafe { &*self.distances }
     }
 
-    fn get_volatile_mut(&mut self) -> &mut VolatileState {
-        unsafe { &mut *self.volatile }
+    fn set_distances(&mut self, distances: Array2D) {
+        let mut distances_box = unsafe { Box::from_raw(self.distances) };
+        distances_box.clear();
+        *distances_box = distances;
+        self.distances = Box::into_raw(distances_box);
     }
 }
 
@@ -258,7 +160,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
     let path_length = path_points
         .iter()
         .fold((0.0, path_points[0]), |(acc, prev), &p| {
-            (acc + prev.dist(p), p)
+            (acc + prev.dist(&p), p)
         })
         .0;
 
@@ -267,10 +169,12 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
 
 fn make_initial_turrets() -> Vec<Turret> {
     vec![
-        Turret::new(Vector2::new(100.0, 100.0)),
-        Turret::new(Vector2::new(200.0, 200.0)),
+        Turret::new(Vector2::new(200.0, 150.0)),
+        Turret::new(Vector2::new(400.0, 150.0)),
     ]
 }
+
+pub type GameInit = fn() -> State;
 
 #[no_mangle]
 pub fn game_init() -> State {
@@ -281,6 +185,11 @@ pub fn game_init() -> State {
     // SetTargetFPS(300);
 
     // webhacks::log("game_init".to_string());
+
+    log::set_trace_log_callback();
+    log::set_log_level(log::INFO);
+    log::trace("game_init");
+    log::warning("im a warning");
 
     raylib::init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
 
@@ -296,33 +205,22 @@ pub fn game_init() -> State {
     let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
     let (path_points, path_length) = make_path_points();
-    let (path_n, path_arr) = clone_to_malloced(path_points);
+    let (path_n, path_arr) = clone_to_malloced(&path_points);
 
     let turrets = make_initial_turrets();
-    let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
+    let (turrets_n, turrets_arr) = clone_to_malloced(&turrets);
 
-    let volatile_local = VolatileState {
-        enemy_mouse_n: 0,
-        enemy_mouse_arr: std::ptr::null_mut(),
-    };
+    let distances = Array2D::new(0, 0);
 
-    // move to malloced memory
-    let mem_size = std::mem::size_of::<VolatileState>();
-    let layout = std::alloc::Layout::from_size_align(mem_size, 4).unwrap();
-    let volatile_ptr = unsafe { std::alloc::alloc(layout) as *mut VolatileState };
-    unsafe { *volatile_ptr = volatile_local.clone() };
+    // move to static memory
+    let distances_ptr = Box::into_raw(Box::new(distances));
 
     State {
         all_loaded: Bool::False(),
         curr_time: webhacks::get_time() as f32,
         prev_time: 0.0,
         frame_count: 99,
-        rect: Rectangle {
-            x: (WINDOW_WIDTH as f32 - 100.0) / 2.0,
-            y: (WINDOW_HEIGHT as f32 - 100.0) / 2.0,
-            width: 100.0,
-            height: 100.0,
-        },
+        slime_pos: Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0 + 50.0),
         mouse_pos: Vector2::new(0.0, 0.0),
         mouse_btn: Bool::False(),
         mouse_btn_pressed: Bool::False(),
@@ -340,38 +238,37 @@ pub fn game_init() -> State {
         mute: Bool::True(),
         turrets_n: turrets_n,
         turrets_arr: turrets_arr,
-        volatile: volatile_ptr,
+        distances: distances_ptr,
+        life: 20,
     }
 }
 
-fn clone_to_malloced<T: Clone>(vec: Vec<T>) -> (u32, *mut T) {
-    let n = vec.len().try_into().unwrap();
+fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
+    let n = arr.len().try_into().unwrap();
 
     if n == 0 {
         return (0, std::ptr::null_mut());
     }
 
-    let vec_mem_size = std::mem::size_of::<T>() * vec.len();
-    let layout = std::alloc::Layout::from_size_align(vec_mem_size, 4).unwrap();
-    let vec_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
+    let mem_size = std::mem::size_of::<T>() * arr.len();
+    let layout = std::alloc::Layout::from_size_align(mem_size, 4).unwrap();
+    let ptr = unsafe { std::alloc::alloc(layout) as *mut T };
 
-    for (i, item) in vec.iter().enumerate() {
+    for (i, item) in arr.iter().enumerate() {
         unsafe {
-            *vec_ptr.offset(i as isize) = item.clone();
+            *ptr.offset(i as isize) = item.clone();
         }
     }
 
-    (n, vec_ptr)
+    (n, ptr)
 }
 
-#[allow(dead_code)]
 fn free_malloced<T>(len: u32, ptr: *mut T) {
-    let size = std::mem::size_of::<T>() * len as usize;
-    let maybe_layout = std::alloc::Layout::from_size_align(size, 4);
-    if maybe_layout.is_err() {
+    if ptr.is_null() {
         return;
     }
-    let layout = maybe_layout.unwrap();
+    let size = std::mem::size_of::<T>() * len as usize;
+    let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     let _ptr = ptr as *mut u8;
     unsafe { std::alloc::dealloc(_ptr, layout) }
 }
@@ -421,20 +318,24 @@ pub fn game_load(state: &mut State) {
         // Once we've determined that init/load is done, we can unload some resources
 
         let blobs = anim::find_blobs(state.image);
-
-        // we have a vector of blobs. lets put it into a malloced array
-        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(blobs);
+        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
 
         state.anim_blobs_arr = anim_blobs_arr;
         state.anim_blobs_n = anim_blobs_n;
 
-        webhacks::unload_image(state.image); // we don't need the image anymore    }
+        webhacks::unload_image(state.image); // we don't need the image anymore
 
         if state.mute.bool() {
             webhacks::set_music_volume(state.music, 0.0);
         } else {
             webhacks::set_music_volume(state.music, 1.0);
         }
+
+        let texture_shape = webhacks::get_texture_shape(state.texture);
+        webhacks::log(
+            -1,
+            format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
+        );
     }
 }
 
@@ -462,22 +363,22 @@ fn handle_keys(state: &mut State) {
         d = raylib::IsKeyDown(KEY::D);
     }
 
-    state.rect.y -= dt * speed * (w as i32 as f32);
-    state.rect.y += dt * speed * (s as i32 as f32);
-    state.rect.x -= dt * speed * (a as i32 as f32);
-    state.rect.x += dt * speed * (d as i32 as f32);
+    state.slime_pos.y -= dt * speed * (w as i32 as f32);
+    state.slime_pos.y += dt * speed * (s as i32 as f32);
+    state.slime_pos.x -= dt * speed * (a as i32 as f32);
+    state.slime_pos.x += dt * speed * (d as i32 as f32);
 
     // prevent the rect from wandering off the screen too far
-    if state.rect.x < -state.rect.width {
-        state.rect.x = -state.rect.width;
-    } else if state.rect.x > WINDOW_WIDTH as f32 {
-        state.rect.x = WINDOW_WIDTH as f32;
+    if state.slime_pos.x < -100.0 {
+        state.slime_pos.x = -100.0;
+    } else if state.slime_pos.x > WINDOW_WIDTH as f32 {
+        state.slime_pos.x = WINDOW_WIDTH as f32;
     }
 
-    if state.rect.y < -state.rect.height {
-        state.rect.y = -state.rect.height;
-    } else if state.rect.y > WINDOW_HEIGHT as f32 {
-        state.rect.y = WINDOW_HEIGHT as f32;
+    if state.slime_pos.y < -100.0 {
+        state.slime_pos.y = -100.0;
+    } else if state.slime_pos.y > WINDOW_HEIGHT as f32 {
+        state.slime_pos.y = WINDOW_HEIGHT as f32;
     }
 
     // if raylib::IsKeyPressed(KEY::M) {
@@ -505,85 +406,67 @@ fn handle_mouse(state: &mut State) {
     };
 }
 
-fn draw_slime_at_rect(
-    rect: Rectangle,
+fn draw_slime_at_pos(
+    position: Vector2,
     anim_blobs: &[anim::Blob],
     texture: webhacks::Texture,
     time: f32,
 ) {
-    let mut position = Vector2::new(rect.x, rect.y);
-
-    // figure out how to scale the texture to the size of the rect
-    let shape = webhacks::get_texture_shape(texture);
-    let scale = rect.width / shape.x as f32;
-
-    // Move the texture so it's at the bottom of the rect
-    let scaled_height = shape.y as f32 * scale;
-    position.y += rect.height - scaled_height;
-
+    let scale = 5.0;
     let i = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
 
     let blob = anim_blobs[i as usize];
     let source = blob.to_rect();
+    let width = blob.width() as f32 * scale;
+    let height = blob.height() as f32 * scale;
     webhacks::draw_texture_pro(
         texture,
         source,
         Rectangle {
-            x: position.x,
-            y: position.y,
-            width: rect.width,
-            height: scaled_height,
+            x: position.x - width / 2.0,
+            y: position.y - height,
+            width: width,
+            height: height,
         },
     );
+    // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
-fn process_enemies(state: &mut State) {
-    let mut enemies = state.get_enemies_vec().unwrap_or_default();
+fn update_entities(state: &mut State) {
+    let mut enemies = state.get_enemies().unwrap_or_default().to_vec();
+    let mut turrets = state.get_turrets().unwrap_or_default().to_vec();
 
-    let last = enemies.last();
+    let last_enemy = enemies.last();
 
     // spawn a new enemy every second
-    if last.is_none() || state.curr_time - last.unwrap().spawn_time > SPAWN_INTERVAL {
+    if last_enemy.is_none() || state.curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
         // spawn a new enemy
         let new_enemy = Enemy::new(state.curr_time);
         enemies.push(new_enemy);
     }
 
+    let mut n_dead = 0;
     for enemy in enemies.iter_mut() {
         enemy.update(state);
+        n_dead += enemy.dead.bool() as u32;
     }
+
+    state.life -= std::cmp::min(n_dead, state.life);
 
     enemies = enemies
         .into_iter()
         .filter(|enemy| !enemy.dead.bool())
         .collect();
 
-    // calculate the distance of each enemy from the mouse
-    let distances = enemies
-        .iter()
-        .map(|enemy| {
-            let pos = enemy.screen_position(state.get_path());
-            let dist = pos.dist(state.mouse_pos);
-            dist
-        })
-        .collect::<Vec<f32>>();
-
-    state
-        .get_volatile_mut()
-        .set_enemy_mouse_distances(distances);
-
-    state.set_enemies_vec(enemies);
-}
-
-fn process_turrets(state: &mut State) {
-    let mut turrets = state.get_turrets_vec().unwrap_or_default();
-
-    if state.mouse_btn_pressed.bool() {
-        turrets.push(Turret::new(state.mouse_pos));
-    }
-
+    let mut any_dead = false;
     for turret in turrets.iter_mut() {
         turret.update(state);
+        any_dead = any_dead || turret.dead.bool();
+    }
+
+    if !any_dead && state.mouse_btn_pressed.bool() {
+        // check if we've clicked with
+        turrets.push(Turret::new(state.mouse_pos));
     }
 
     turrets = turrets
@@ -591,42 +474,83 @@ fn process_turrets(state: &mut State) {
         .filter(|turret| !turret.dead.bool())
         .collect();
 
-    state.set_turrets_vec(turrets);
+    // distances will be a 2D array of size enemies.len() x turret.len() + 1
+    // mouse will be tracked as the last row
+
+    let mut distances = Array2D::new(enemies.len(), turrets.len() + 1);
+
+    for (i, enemy) in enemies.iter().enumerate() {
+        for (j, turret) in turrets.iter().enumerate() {
+            let dist = enemy
+                .screen_position(state.get_path())
+                .dist(&turret.position);
+            distances.set(i, j, dist);
+        }
+        let mouse_dist = enemy
+            .screen_position(state.get_path())
+            .dist(&state.mouse_pos);
+        distances.set(i, turrets.len(), mouse_dist);
+    }
+
+    state.set_distances(distances);
+    state.set_enemies(&enemies);
+    state.set_turrets(&turrets);
 }
 
-fn draw_enemies(state: &State) {
-    let enemies = state.get_enemies_vec().unwrap_or_default();
+fn draw_entities_background(state: &State) {
+    let enemies = state.get_enemies().unwrap_or_default();
+    let turrets = state.get_turrets().unwrap_or_default();
 
-    if enemies.is_empty() {
-        return;
+    let distances = state.get_distances();
+
+    // draw lines from enemies to turrets if they are within range
+    for (i, enemy) in enemies.iter().enumerate() {
+        for (j, turret) in turrets.iter().enumerate() {
+            let distance = distances.get(i, j).clone();
+            if distance < ACTIVE_RADIUS {
+                let enemy_pos = enemy.screen_position(state.get_path());
+                webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
+            }
+        }
+    }
+
+    // draw line to mouse if it's within range
+    for (i, enemy) in enemies.iter().enumerate() {
+        let distance = distances.get(i, distances.height() - 1).clone();
+        if distance < ACTIVE_RADIUS {
+            let enemy_pos = enemy.screen_position(state.get_path());
+            webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
+        }
     }
 
     for (i, enemy) in enemies.iter().enumerate() {
-        enemy.draw(i, state);
+        enemy.draw_background(i, state);
     }
-}
-
-fn draw_turrets(state: &State) {
-    let turrets = state.get_turrets_vec().unwrap_or_default();
-
-    if turrets.is_empty() {
-        return;
-    }
-
     for (i, turret) in turrets.iter().enumerate() {
-        turret.draw(i, state);
+        turret.draw_background(i, state);
     }
 }
-fn draw_mouse(state: &State) {
-    let color = if state.mouse_btn.bool() {
-        RED
-    } else {
-        RAYWHITE
-    };
-    webhacks::draw_circle(state.mouse_pos, ACTIVE_RADIUS, BEIGE);
-    webhacks::draw_circle(state.mouse_pos, 10.0, color);
 
-    // draw lar
+fn draw_entities_foreground(state: &State) {
+    let enemies = state.get_enemies().unwrap_or_default();
+    let turrets = state.get_turrets().unwrap_or_default();
+
+    for (i, enemy) in enemies.iter().enumerate() {
+        enemy.draw_foreground(i, state);
+    }
+    for (i, turret) in turrets.iter().enumerate() {
+        turret.draw_foreground(i, state);
+    }
+}
+
+fn draw_mouse(_state: &State) {
+    // let color = if state.mouse_btn.bool() {
+    //     RED
+    // } else {
+    //     RAYWHITE
+    // };
+    // webhacks::draw_circle(state.mouse_pos, ACTIVE_RADIUS, BEIGE);
+    // webhacks::draw_circle(state.mouse_pos, 2.0, color);
 }
 
 fn draw_path(state: &State) {
@@ -641,19 +565,33 @@ fn draw_path(state: &State) {
 }
 
 fn draw_text(state: &State) {
-    let rect_pos = format! {
-        "rect: [{x}, {y}]",
-        x = state.rect.x.round(),
-        y = state.rect.y.round()
+    let slime_pos_text = format! {
+        "slime: [{x}, {y}]",
+        x = state.slime_pos.x.round(),
+        y = state.slime_pos.y.round()
     };
-    webhacks::draw_text(state.font, &rect_pos, 10, 10, 20, RAYWHITE);
+    webhacks::draw_text(
+        state.font,
+        &slime_pos_text,
+        Vector2::new(10.0, 10.0),
+        20,
+        2.0,
+        RAYWHITE,
+    );
 
     let mouse_pos = format! {
         "mouse: [{x}, {y}]",
         x = state.mouse_pos.x.round(),
         y = state.mouse_pos.y.round()
     };
-    webhacks::draw_text(state.font, &mouse_pos, 10, 30, 20, RAYWHITE);
+    webhacks::draw_text(
+        state.font,
+        &mouse_pos,
+        Vector2::new(10.0, 30.0),
+        20,
+        2.0,
+        RAYWHITE,
+    );
 
     // Draw the music indicator in the top right corner
     webhacks::draw_text(
@@ -663,11 +601,20 @@ fn draw_text(state: &State) {
         } else {
             "sound: on"
         },
-        WINDOW_WIDTH - 105,
-        10,
+        Vector2::new(WINDOW_WIDTH as f32 - 105.0, 10.0),
         20,
+        2.0,
         RAYWHITE,
     );
+
+    // draw life
+    let path = state.get_path();
+    let life_text = format!("life: {}", state.life);
+    let font_size = 30;
+    let text_size = webhacks::measure_text(state.font, &life_text, font_size, 2.0);
+    let mut last = path[path.len() - 1].clone();
+    let pos = last.add(&Vector2::new(-text_size.x as f32 / 2.0, 20.0));
+    webhacks::draw_text(state.font, &life_text, *pos, font_size, 2.0, RAYWHITE);
 }
 
 pub type GameFrame = fn(state: &mut State);
@@ -677,28 +624,57 @@ pub fn game_frame(state: &mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    process_enemies(state);
-    process_turrets(state);
+    update_entities(state);
 
-    handle_keys(state);
-    handle_mouse(state);
+    let game_over = state.life == 0;
+
+    if !game_over {
+        handle_keys(state);
+        handle_mouse(state);
+    }
 
     unsafe { raylib::BeginDrawing() };
 
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        draw_mouse(state);
-
         let anim_blobs = unsafe {
             std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
         };
-        draw_slime_at_rect(state.rect, anim_blobs, state.texture, state.curr_time);
+        draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
 
         draw_text(state);
+        draw_entities_background(state);
         draw_path(state);
-        draw_enemies(state);
-        draw_turrets(state);
+        draw_entities_foreground(state);
+
+        draw_mouse(state);
+
+        if game_over {
+            // draw a shaded rectangle over the screen
+            unsafe {
+                raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
+            }
+
+            // draw the game over text
+            let text = "Game Over!";
+            let font_size = 50;
+            let text_size = webhacks::measure_text(state.font, text, font_size, 2.0);
+            let position = Vector2::new(
+                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+                ((WINDOW_HEIGHT - font_size) / 2) as f32,
+            );
+            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+
+            let text = "Press R to restart";
+            let font_size = 20;
+            let text_size = webhacks::measure_text(state.font, text, font_size, 1.0);
+            let position = Vector2::new(
+                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+                ((WINDOW_HEIGHT - font_size) / 2 + 50) as f32,
+            );
+            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+        }
     }
 
     unsafe { raylib::EndDrawing() };
@@ -724,7 +700,9 @@ pub unsafe fn game_over() {
 #[no_mangle]
 pub fn from_js_malloc(size: usize) -> *mut u8 {
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
-    unsafe { std::alloc::alloc(layout) }
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    log::trace(format!("[from_js_malloc] size: {}, ptr: {:?}", size, ptr).as_str());
+    ptr
 }
 
 #[cfg(feature = "web")]
@@ -732,4 +710,5 @@ pub fn from_js_malloc(size: usize) -> *mut u8 {
 pub fn from_js_free(ptr: *mut u8, size: usize) {
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
+    log::trace(format!("[from_js_free] size: {}, ptr: {:?}", size, ptr).as_str());
 }
