@@ -2,8 +2,10 @@ use raylib::{cstr, Color};
 use raylib_wasm as raylib;
 use std::ops::Not;
 
+#[cfg(feature = "native")]
+use crate::log::VaList;
+
 use crate::vec2::Vector2;
-use crate::vec2::Vector2Ext;
 
 #[cfg(feature = "web")]
 use std::ptr::addr_of;
@@ -99,7 +101,8 @@ pub mod ffi {
         pub fn LoadMusicStream(file_path: *const i8) -> u32;
         pub fn IsMouseButtonDown(button: i32) -> bool;
         pub fn IsMouseButtonPressed(button: i32) -> bool;
-        pub fn ConsoleLog(msg: *const i8);
+        pub fn ConsoleLog(msg: *const i8, args: *const i8);
+        pub fn Log(level: i32, msg: *const i8);
         pub fn LoadFont(file_path: *const i8) -> u32;
         pub fn DrawTextEx(
             font: Font,
@@ -144,6 +147,8 @@ pub mod ffi {
         );
         pub fn SetMusicVolume(music: Music, volume: f32);
         pub fn IsKeyPressed(key: i32) -> bool;
+        pub fn SetTraceLogCallback(callback_name: *const i8);
+        pub fn SetTraceLogLevel(level: i32);
     }
 }
 
@@ -165,14 +170,48 @@ pub fn draw_texture_ex(
     }
 }
 
-#[allow(non_snake_case, dead_code)]
-pub fn log(msg: String) {
+#[cfg(feature = "web")]
+const SPECIAL: &str = "<END>";
+
+#[allow(unused)]
+pub fn _console_log_args(msg: &str, args: Option<Vec<&str>>) {
+    #[cfg(feature = "web")]
+    {
+        let args = args.unwrap_or(vec![]);
+        let mut args_str = args.join("\0");
+        if !args.is_empty() {
+            args_str.push_str("\0");
+        }
+        args_str.push_str(SPECIAL);
+        args_str.push_str("\0");
+        let c_args = args_str.as_ptr();
+        unsafe { ffi::ConsoleLog(cstr!(msg), c_args as *const i8) };
+    }
+    // we should not use this function in native mode, but lets not fall over
+    #[cfg(feature = "native")]
+    panic!("console_log should not be called in native mode! use the game::log module instead");
+}
+
+// for now we support only strings as additional arguments
+#[allow(unused)]
+pub fn _console_log(msg: &str) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::ConsoleLog(cstr!(msg))
+        ffi::ConsoleLog(cstr!(msg), std::ptr::null());
     };
     #[cfg(feature = "native")]
-    println!("{}", msg);
+    panic!("console_log should not be called in native mode! use the game::log module instead");
+}
+
+pub fn log(level: i32, msg: &str) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::Log(level, cstr!(msg))
+    };
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::TraceLog(level, cstr!(msg));
+    }
 }
 
 pub fn draw_text(font: Font, text: &str, position: Vector2, size: i32, spacing: f32, color: Color) {
@@ -501,4 +540,35 @@ pub fn measure_text(font: Font, text: &str, font_size: i32, spacing: f32) -> Vec
     }
     #[cfg(feature = "native")]
     unsafe { raylib::MeasureTextEx(font, cstr!(text), font_size as f32, spacing) }.into()
+}
+
+#[cfg(feature = "native")]
+pub type LogCallback = unsafe extern "C" fn(i32, *const i8, *mut VaList);
+
+#[cfg(feature = "web")]
+pub type LogCallback = fn(i32, *const i8);
+
+#[allow(unused)]
+pub fn set_trace_log_callback(callback: Option<LogCallback>, callback_name: &str) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetTraceLogCallback(cstr!(callback_name));
+    }
+
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetTraceLogCallback(callback);
+    }
+}
+
+#[allow(unused)]
+pub fn set_log_level(level: i32) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetTraceLogLevel(level);
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetTraceLogLevel(level);
+    }
 }

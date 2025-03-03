@@ -12,7 +12,6 @@ native = ["raylib-wasm/native", "game/native"]
 libloading = "0.8.3"
 game = { path = "game" }
 raylib-wasm = { version = "0.0.17", default-features = false }
-# raylib-wasm = { path = "raylib-wasm", default-features = false }
 
 # configure tests to discover the tests in the game crate
 [workspace]

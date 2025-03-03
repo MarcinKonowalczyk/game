@@ -121,7 +121,7 @@ export function loopify(uri, cb) {
 
                 // Schedule ourselves to play the next segment
                 future_id = setTimeout(() => {
-                    recursivePlay(gain);
+                    recursivePlay(GAIN);
                 }, (buffer.duration - fade_time) * 1000);
             }
 

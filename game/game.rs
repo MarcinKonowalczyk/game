@@ -1,7 +1,8 @@
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
-use raylib_wasm::{self as raylib, BLUE};
-use raylib_wasm::{cstr, Color};
+use raylib_wasm::{self as raylib, Color, BLUE};
 use webhacks::Bool;
+
+mod log;
 
 mod anim;
 mod array2d;
@@ -24,8 +25,8 @@ const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
 const SPAWN_INTERVAL: f32 = 1.0;
-// const SPEED_ENEMY: f32 = 340.0;
-const SPEED_ENEMY: f32 = 1340.0;
+const SPEED_ENEMY: f32 = 340.0;
+// const SPEED_ENEMY: f32 = 1340.0;
 
 const TURRET_RADIUS: f32 = 10.0;
 const ACTIVE_RADIUS: f32 = 100.0;
@@ -173,6 +174,8 @@ fn make_initial_turrets() -> Vec<Turret> {
     ]
 }
 
+pub type GameInit = fn() -> State;
+
 #[no_mangle]
 pub fn game_init() -> State {
     // We do not cap the framerate, since it leads to sluggish mouse input, since raylib cannot detect mouse input
@@ -182,6 +185,11 @@ pub fn game_init() -> State {
     // SetTargetFPS(300);
 
     // webhacks::log("game_init".to_string());
+
+    log::set_trace_log_callback();
+    log::set_log_level(log::INFO);
+    log::trace("game_init");
+    log::warning("im a warning");
 
     raylib::init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
 
@@ -231,7 +239,7 @@ pub fn game_init() -> State {
         turrets_n: turrets_n,
         turrets_arr: turrets_arr,
         distances: distances_ptr,
-        life: 2,
+        life: 20,
     }
 }
 
@@ -324,10 +332,10 @@ pub fn game_load(state: &mut State) {
         }
 
         let texture_shape = webhacks::get_texture_shape(state.texture);
-        webhacks::log(format!(
-            "texture shape: [{}, {}]",
-            texture_shape.x, texture_shape.y
-        ));
+        webhacks::log(
+            -1,
+            format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
+        );
     }
 }
 
@@ -692,7 +700,9 @@ pub unsafe fn game_over() {
 #[no_mangle]
 pub fn from_js_malloc(size: usize) -> *mut u8 {
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
-    unsafe { std::alloc::alloc(layout) }
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    log::trace(format!("[from_js_malloc] size: {}, ptr: {:?}", size, ptr).as_str());
+    ptr
 }
 
 #[cfg(feature = "web")]
@@ -700,4 +710,5 @@ pub fn from_js_malloc(size: usize) -> *mut u8 {
 pub fn from_js_free(ptr: *mut u8, size: usize) {
     let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
+    log::trace(format!("[from_js_free] size: {}, ptr: {:?}", size, ptr).as_str());
 }

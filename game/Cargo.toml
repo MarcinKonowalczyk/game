@@ -11,6 +11,9 @@ native = ["raylib-wasm/native"]
 raylib-wasm = { version = "0.0.17", default-features = false }
 # raylib-wasm = { path = "../raylib-wasm", default-features = false }
 
+[build-dependencies]
+cc = "1.0"
+
 [lib]
 path = "game.rs"
 crate-type = ["cdylib", "lib"]

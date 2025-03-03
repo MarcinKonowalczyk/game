@@ -198,20 +198,133 @@ let WF = undefined;
 let QUIT = undefined;
 let _PREV_TIMESTAMP = undefined;
 let TARGET_FPS = undefined;
+let LOG_CALLBACK = undefined;
+let LOG_LEVEL = 3; // default to 3=INFO
+
+// Add String.format
+// https://stackoverflow.com/a/4673436
+if (!String.prototype.format) {
+    String.prototype.format = function () {
+        var args = arguments;
+        return this.replace(/{(\d+)}/g, function (match, number) {
+            return typeof args[number] != 'undefined'
+                ? args[number]
+                : match
+                ;
+        });
+    };
+}
+
+function wasm_alloc_string(msg) {
+    let utf8_encode = new TextEncoder();
+    let msg_bytearray = utf8_encode.encode(msg);
+    let N = msg_bytearray.length;
+    let text_ptr = WF.from_js_malloc(N + 1);
+    let buffer = WF.memory.buffer;
+    let text = new Uint8Array(buffer, text_ptr, N + 1);
+    text.set(msg_bytearray);
+    text[N] = 0; // null-terminated
+    return text_ptr;
+}
+
+function wasm_free_string(text_ptr, length) {
+    WF.from_js_free(text_ptr, length + 1);
+}
+
+function _log(level, msg, text_ptr) {
+    if (level < LOG_LEVEL) {
+        // skip log if below log level
+        return;
+    }
+    if (LOG_CALLBACK !== undefined) {
+        var alloced = false;
+        if (text_ptr === undefined) {
+            text_ptr = wasm_alloc_string(msg);
+            alloced = true;
+        }
+        // NOTE: we pass the pointer, not the text
+        // console.log("calling", LOG_CALLBACK, level, text_ptr, WF[LOG_CALLBACK]);
+        WF[LOG_CALLBACK](level, text_ptr);
+        if (alloced) {
+            wasm_free_string(text_ptr, msg.length);
+        }
+    } else {
+        let text = getString(WF.memory.buffer, text_ptr);
+        console.log(level, text);
+    }
+}
+
+const LOG_LEVELS = {
+    "ALL": 0,
+    "TRACE": 1,
+    "DEBUG": 2,
+    "INFO": 3,
+    "WARNING": 4,
+    "ERROR": 5,
+    "FATAL": 6,
+    "NONE": 999,
+}
+
+let info = (msg) => _log(LOG_LEVELS.INFO, msg);
 
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
-        ConsoleLog: (text_ptr) => console.log(getString(WF.memory.buffer, text_ptr)),
+        // pub fn ConsoleLog(msg: *const i8, n: i32, args: *const *const i8);
+        ConsoleLog: (text_ptr, args_ptr) => {
+            let buffer = WF.memory.buffer;
+            let args = new Array();
+            if (args_ptr !== 0) {
+                let offset = 0;
+                const special = "<END>";
+                while (true) {
+                    let next_arg = getString(buffer, args_ptr + offset);
+                    if (next_arg === special) break;
+                    args.push(next_arg);
+                    offset += next_arg.length + 1;
+                }
+            }
+            if (args.length === 0) {
+                console.log(getString(buffer, text_ptr));
+            } else {
+                console.log(getString(buffer, text_ptr), ...args);
+            }
+        },
+        Log: (level, text_ptr) => _log(level, "", text_ptr),
+        // pub fn SetTraceLogCallback(callback_name: *const i8) -> ();
+        SetTraceLogCallback: (callback_name_ptr) => {
+            const buffer = WF.memory.buffer;
+            var func_name = getString(buffer, callback_name_ptr);
+            let parts = func_name.split('::');
+            func_name = parts.pop();
+
+            // check if we have a function with that name in WF
+            if (func_name === "") {
+                // unset the callback
+                // console.log("Unsetting logging callback", { func_name });
+                info("Unsetting logging callback: func_name={0}".format(func_name));
+                LOG_CALLBACK = undefined;
+            } else if (WF[func_name] === undefined) {
+                console.error("Function not found", { func_name });
+            } else {
+                // console.log("Setting logging callback", { func_name });
+                LOG_CALLBACK = func_name
+                info("Setting logging callback: func_name={0}".format(func_name));
+            }
+        },
+        SetTraceLogLevel: (level) => {
+            LOG_LEVEL = level;
+        },
         GetMousePositionX: () => GAME.mouseX,
         GetMousePositionY: () => GAME.mouseY,
         IsMouseButtonDown: (button) => GAME.mouse_state[button],
         IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
-        InitWindow: (w, h, t) => {
-            console.log("InitWindow", { w, h, t });
-            GAME.width = w;
-            GAME.height = h;
-            const buffer = WF.memory.buffer;
-            document.title = getString(buffer, t);
+        InitWindow: (width, height, title_ptr) => {
+            let title = getString(WF.memory.buffer, title_ptr);
+            // console.log("InitWindow", { width, height, title });
+            info("InitWindow: width={0}, height={1}, title={2}".format(width, height, title));
+            GAME.width = width;
+            GAME.height = height;
+            document.title = title;
         },
         BeginDrawing: () => { },
         CloseWindow: () => { },
@@ -250,7 +363,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             var id = gen_asset_id();
 
-            console.log("Loading font", { id, file_path });
+            // console.log("Loading font", { id, file_path });
+            info("Loading font: id={0}, file_path={1}".format(id, file_path));
 
             // split at the last slash and at the last dot
             // let ext = file_path.split('.').pop();
@@ -391,7 +505,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         LoadTexture: (file_path_ptr) => {
             var id = gen_asset_id();
-            console.log("Loading texture", { id, file_path });
+            // console.log("Loading texture", { id, file_path });
+            info("Loading texture: id={0}, file_path={1}".format(id, getString(WF.memory.buffer, file_path_ptr)));
 
             const buffer = WF.memory.buffer;
             const file_path = getString(buffer, file_path_ptr);
@@ -478,7 +593,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const file_path = getString(buffer, file_path_ptr);
 
             let id = gen_asset_id();
-            console.log("Loading music stream", { id, file_path });
+            // console.log("Loading music stream", { id, file_path });
+            info("Loading music stream: id={0}, file_path={1}".format(id, file_path));
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
@@ -514,7 +630,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const file_path = getString(buffer, file_path_ptr);
 
             var id = gen_asset_id();
-            console.log("Loading image", { id, file_path });
+            // console.log("Loading image", { id, file_path });
+            info("Loading image: id={0}, file_path={1}".format(id, file_path));
 
             let img = new Image();
 
@@ -548,11 +665,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const colors = new Uint8Array(WF.memory.buffer, WF.from_js_malloc(data.length), data.length);
             colors.set(data);
             let ptr = colors.byteOffset;
-            console.log("Loading image colors", { id, ptr, size: data.length });
+            // console.log("Loading image colors", { id, ptr, size: data.length });
+            info("Loading image colors: id={0}, ptr={1}, size={2}".format(id, ptr, data.length));
             return ptr;
         },
         UnloadImageColors: (ptr, size) => {
-            console.log("Unloading image colors", { ptr, size });
+            // console.log("Unloading image colors", { ptr, size });
+            info("Unloading image colors: ptr={0}, size={1}".format(ptr, size));
             WF.from_js_free(ptr, size);
         },
         IsImageLoaded: (id) => {
@@ -565,7 +684,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         // pub fn LoadTextureFromImage(image: u32) -> u32;
         LoadTextureFromImage: (id) => {
             var tex_id = gen_asset_id();
-            console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
+            // console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
+            info("Loading texture from image: image_id={0}, texture_id={1}".format(id, tex_id));
             const img = IMAGES[id];
             TEXTURES[tex_id] = img;
             return tex_id;
@@ -588,7 +708,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
         },
         // pub fn UnloadImage(image: Image) -> ();
         UnloadImage: (image_id) => {
-            console.log("Unloading image", image_id);
+            // console.log("Unloading image", image_id);
+            info("Unloading image: id={0}".format(image_id));
             delete IMAGES[image_id];
         },
         // pub fn GetTime() -> f64;
@@ -615,7 +736,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 }).then(w => {
     WASM = w;
     WF = w.instance.exports;
-    // console.log(w);
+    console.log(w);
 
     // window.addEventListener("keydown", keyDown);
     // window.addEventListener("keyup", keyUp);
