@@ -57,3 +57,8 @@ By 'working' I mean on web and on my machine (macos).
 - [ ] Entity interactions
 - [ ] Life/Currency system
 - [ ] draw buffer
+
+# Other ToDo's
+
+- Look into [profiling wasm heap memory usage](https://stackoverflow.com/questions/78246635/how-do-i-log-wasm-heap-memory-usage-from-rust)
+
