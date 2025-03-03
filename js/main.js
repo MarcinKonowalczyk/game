@@ -220,11 +220,10 @@ function wasm_alloc_string(msg) {
     let msg_bytearray = utf8_encode.encode(msg);
     let N = msg_bytearray.length;
     let text_ptr = WF.from_js_malloc(N + 1);
-    let buffer = WF.memory.buffer;
-    let text = new Uint8Array(buffer, text_ptr, N + 1);
+    let text = new Uint8Array(WF.memory.buffer, text_ptr, N + 1);
     text.set(msg_bytearray);
     text[N] = 0; // null-terminated
-    return text_ptr;
+    return [text_ptr, N];
 }
 
 function wasm_free_string(text_ptr, length) {
@@ -239,14 +238,15 @@ function _log(level, msg, text_ptr) {
     if (LOG_CALLBACK !== undefined) {
         var alloced = false;
         if (text_ptr === undefined) {
-            text_ptr = wasm_alloc_string(msg);
+            var N;
+            [text_ptr, N] = wasm_alloc_string(msg);
             alloced = true;
         }
         // NOTE: we pass the pointer, not the text
         // console.log("calling", LOG_CALLBACK, level, text_ptr, WF[LOG_CALLBACK]);
         WF[LOG_CALLBACK](level, text_ptr);
         if (alloced) {
-            wasm_free_string(text_ptr, msg.length);
+            wasm_free_string(text_ptr, N);
         }
     } else {
         let text = getString(WF.memory.buffer, text_ptr);
