@@ -41,33 +41,6 @@ const CTX = GAME.getContext("2d");
 GAME.keys_state = new Set();
 GAME.prev_keys_state = new Set();
 
-// const keyDown = (e) => {
-//     e.preventDefault();
-//     CURR_PRESSED_KEY.add(GLFW_MAP[e.code]);
-// }
-
-// const keyUp = (e) => {
-//     e.preventDefault();
-//     CURR_PRESSED_KEY.delete(GLFW_MAP[e.code]);
-// }
-
-// pub enum MouseButton {
-//     /// Mouse button left
-//     Left = 0,
-//     /// Mouse button right
-//     Right = 1,
-//     /// Mouse button middle (pressed wheel)
-//     Middle = 2,
-//     /// Mouse button side (advanced mouse device)
-//     Side = 3,
-//     /// Mouse button extra (advanced mouse device)
-//     Extra = 4,
-//     /// Mouse button forward (advanced mouse device)
-//     Forward = 5,
-//     /// Mouse button back (advanced mouse device)
-//     Back = 6,
-// }
-
 let MOUSE_MAP = {
     "Left": 0,
     "Right": 1,
@@ -648,13 +621,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             delete TEXTURES[id];
         },
         // pub fn LoadImageColors(image: Image) -> *mut Color;
-        // pub struct Color {
-        //     pub r: u8,
-        //     pub g: u8,
-        //     pub b: u8,
-        //     pub a: u8,
-        // }
-        LoadImageColors: (id) => {
+        LoadImageColors: (id, result_ptr) => {
             const img = IMAGES[id];
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');

@@ -1,7 +1,7 @@
 use raylib_wasm::PINK;
 
 use crate::vec2::Vector2;
-use crate::vec2::Vector2Ext;
+// use crate::vec2::Vector2Ext;
 
 use crate::webhacks;
 use crate::State;
@@ -37,7 +37,7 @@ impl Turret {
         } else {
             self.hover = Bool::False();
         }
-        if self.hover.bool() && state.mouse_btn_pressed.bool() {
+        if self.hover.into() && state.mouse_btn_pressed.into() {
             // despawn the turret
             self.dead = Bool::True();
         }
@@ -48,7 +48,7 @@ impl Turret {
     }
 
     pub fn draw_foreground(&self, _index: usize, _state: &State) {
-        let radius = if self.hover.bool() {
+        let radius = if self.hover.into() {
             TURRET_RADIUS * 1.5
         } else {
             TURRET_RADIUS

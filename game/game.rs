@@ -16,7 +16,7 @@ use crate::array2d::Array2D;
 use crate::enemy::Enemy;
 use crate::turret::Turret;
 use crate::vec2::Vector2;
-use crate::vec2::Vector2Ext;
+// use crate::vec2::Vector2Ext;
 
 const WINDOW_WIDTH: i32 = 800;
 const WINDOW_HEIGHT: i32 = 600;
@@ -72,6 +72,39 @@ pub struct State {
     pub turrets_arr: *mut Turret,
     pub life: u32,
     pub distances: *mut Array2D,
+}
+
+// implement default for State
+use std::default::Default;
+impl Default for State {
+    fn default() -> Self {
+        State {
+            all_loaded: Bool::False(),
+            curr_time: 0.0,
+            prev_time: 0.0,
+            frame_count: 0,
+            slime_pos: Vector2::zero(),
+            mouse_pos: Vector2::zero(),
+            mouse_btn: Bool::False(),
+            mouse_btn_pressed: Bool::False(),
+            music: webhacks::null_music(),
+            font: webhacks::null_font(),
+            image: webhacks::null_image(),
+            texture: webhacks::null_texture(),
+            anim_blobs_n: 0,
+            anim_blobs_arr: std::ptr::null(),
+            path_n: 0,
+            path_arr: std::ptr::null(),
+            path_length: 0.0,
+            enemies_n: 0,
+            enemies_arr: std::ptr::null_mut(),
+            mute: Bool::False(),
+            turrets_n: 0,
+            turrets_arr: std::ptr::null_mut(),
+            life: 0,
+            distances: std::ptr::null_mut(),
+        }
+    }
 }
 
 impl State {
@@ -280,7 +313,7 @@ pub fn game_load(state: &mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    if state.all_loaded.bool() {
+    if state.all_loaded.into() {
         return;
     }
 
@@ -325,7 +358,7 @@ pub fn game_load(state: &mut State) {
 
         webhacks::unload_image(state.image); // we don't need the image anymore
 
-        if state.mute.bool() {
+        if state.mute.into() {
             webhacks::set_music_volume(state.music, 0.0);
         } else {
             webhacks::set_music_volume(state.music, 1.0);
@@ -384,7 +417,7 @@ fn handle_keys(state: &mut State) {
     // if raylib::IsKeyPressed(KEY::M) {
     if webhacks::is_key_pressed(KEY::M) {
         state.mute.toggle();
-        webhacks::set_music_volume(state.music, if state.mute.bool() { 0.0 } else { 1.0 });
+        webhacks::set_music_volume(state.music, if state.mute.into() { 0.0 } else { 1.0 });
     }
 }
 
@@ -436,42 +469,45 @@ fn update_entities(state: &mut State) {
     let mut enemies = state.get_enemies().unwrap_or_default().to_vec();
     let mut turrets = state.get_turrets().unwrap_or_default().to_vec();
 
-    let last_enemy = enemies.last();
-
-    // spawn a new enemy every second
-    if last_enemy.is_none() || state.curr_time - last_enemy.unwrap().spawn_time > SPAWN_INTERVAL {
-        // spawn a new enemy
-        let new_enemy = Enemy::new(state.curr_time);
-        enemies.push(new_enemy);
+    match enemies.as_slice() {
+        [.., last] => {
+            if state.curr_time - last.spawn_time > SPAWN_INTERVAL {
+                enemies.push(Enemy::new(state.curr_time));
+            }
+        }
+        _ => {
+            // no enemies
+            enemies.push(Enemy::new(state.curr_time));
+        }
     }
 
     let mut n_dead = 0;
     for enemy in enemies.iter_mut() {
         enemy.update(state);
-        n_dead += enemy.dead.bool() as u32;
+        n_dead += <Bool as Into<u32>>::into(enemy.dead);
     }
 
     state.life -= std::cmp::min(n_dead, state.life);
 
     enemies = enemies
         .into_iter()
-        .filter(|enemy| !enemy.dead.bool())
+        .filter(|enemy| (!enemy.dead).into())
         .collect();
 
     let mut any_dead = false;
     for turret in turrets.iter_mut() {
         turret.update(state);
-        any_dead = any_dead || turret.dead.bool();
+        any_dead = any_dead || turret.dead.into();
     }
 
-    if !any_dead && state.mouse_btn_pressed.bool() {
+    if !any_dead && state.mouse_btn_pressed.into() {
         // check if we've clicked with
         turrets.push(Turret::new(state.mouse_pos));
     }
 
     turrets = turrets
         .into_iter()
-        .filter(|turret| !turret.dead.bool())
+        .filter(|turret| (!turret.dead).into())
         .collect();
 
     // distances will be a 2D array of size enemies.len() x turret.len() + 1
@@ -544,7 +580,7 @@ fn draw_entities_foreground(state: &State) {
 }
 
 fn draw_mouse(_state: &State) {
-    // let color = if state.mouse_btn.bool() {
+    // let color = if state.mouse_btn.into() {
     //     RED
     // } else {
     //     RAYWHITE
@@ -596,7 +632,7 @@ fn draw_text(state: &State) {
     // Draw the music indicator in the top right corner
     webhacks::draw_text(
         state.font,
-        if state.mute.bool() {
+        if state.mute.into() {
             "sound: off"
         } else {
             "sound: on"
