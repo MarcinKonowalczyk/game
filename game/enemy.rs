@@ -1,10 +1,11 @@
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
+use crate::u32_bool::Bool;
 use crate::webhacks;
-use crate::webhacks::Bool;
 
 use raylib_wasm::{PINK, RAYWHITE};
 
+use crate::entity_manager::{EntityId, HasId};
 use crate::State;
 use crate::ACTIVE_RADIUS;
 use crate::SPEED_ENEMY;
@@ -50,10 +51,17 @@ mod tests {
 pub struct Enemy {
     pub position: f32, // position along the path in pixels
     pub health: f32,
+
+    #[allow(unused)]
     pub max_health: f32,
+
     pub spawn_time: f32,
+
+    #[allow(unused)]
     pub last_hit_time: f32,
+
     pub dead: Bool,
+    pub id: EntityId,
 }
 
 impl Enemy {
@@ -64,16 +72,14 @@ impl Enemy {
             max_health: 100.0,
             spawn_time: time,
             last_hit_time: -1.0,
-            dead: Bool::False(),
+            dead: false.into(),
+            id: 0,
         }
     }
 
     pub fn update(&mut self, state: &State) {
         let dt = state.curr_time - state.prev_time;
         self.position += SPEED_ENEMY * dt;
-        if self.position >= state.path_length {
-            self.dead = Bool::True();
-        };
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {
@@ -82,18 +88,15 @@ impl Enemy {
         // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, index: usize, state: &State) {
+    pub fn draw_foreground(&self, _index: usize, state: &State) {
         let path = state.get_path();
         let pos = self.screen_position(path);
-        let distances = state.get_distances();
+        // let distances = state.get_distances();
 
-        let distance = if distances.height() == 0 {
-            f32::MAX
-        } else {
-            let mouse_distances = distances.get_row(distances.height() - 1);
-            mouse_distances.get(index).cloned().unwrap_or(f32::MAX)
-        };
-
+        //
+        let distance = self
+            .screen_position(state.get_path())
+            .dist(&state.mouse_pos);
         let color = if distance < ACTIVE_RADIUS {
             PINK
         } else {
@@ -106,3 +109,27 @@ impl Enemy {
         path_pos_to_screen_pos(self.position, path)
     }
 }
+
+impl HasId for Enemy {
+    fn id(&self) -> EntityId {
+        self.id
+    }
+
+    fn set_id(&mut self, id: EntityId) {
+        self.id = id;
+    }
+}
+
+// impl HasKind for Enemy {
+//     fn kind(&self) -> EntityKind {
+//         EntityKind::Enemy
+//     }
+// }
+
+// use std::default::Default;
+
+// impl Default for Enemy {
+//     fn default() -> Self {
+//         Enemy::new(0.0)
+//     }
+// }

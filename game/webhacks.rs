@@ -29,52 +29,6 @@ pub type Texture = u32;
 #[cfg(feature = "native")]
 pub type Texture = raylib::Texture;
 
-// 4-byte bool
-#[derive(Copy, Clone, Debug)]
-pub struct Bool {
-    pub value: u32,
-}
-
-use std::ops::Not;
-
-impl Not for Bool {
-    type Output = Bool;
-
-    fn not(self) -> Bool {
-        Bool {
-            value: if self.value == 0 { 1 } else { 0 },
-        }
-    }
-}
-
-impl Into<bool> for Bool {
-    fn into(self) -> bool {
-        self.value != 0
-    }
-}
-
-impl From<Bool> for u32 {
-    fn from(b: Bool) -> u32 {
-        b.value
-    }
-}
-
-impl Bool {
-    #[allow(non_snake_case)]
-    pub fn True() -> Bool {
-        Bool { value: 1 }
-    }
-
-    #[allow(non_snake_case)]
-    pub fn False() -> Bool {
-        Bool { value: 0 }
-    }
-
-    pub fn toggle(&mut self) {
-        self.value = if self.value == 0 { 1 } else { 0 };
-    }
-}
-
 // #[cfg(feature = "web")]
 // pub type Bool = u32;
 // #[cfg(feature = "native")]
@@ -152,6 +106,8 @@ pub mod ffi {
         pub fn IsKeyPressed(key: i32) -> bool;
         pub fn SetTraceLogCallback(callback_name: *const i8);
         pub fn SetTraceLogLevel(level: i32);
+        pub fn SetRandomSeed(seed: u32);
+        pub fn GetRandomValue(min: i32, max: i32) -> i32;
     }
 }
 
@@ -477,6 +433,7 @@ pub fn is_texture_loaded(texture: Texture) -> bool {
     return texture.id != 0;
 }
 
+#[allow(unused)]
 pub fn null_font() -> Font {
     #[cfg(feature = "web")]
     return 0;
@@ -491,6 +448,7 @@ pub fn null_font() -> Font {
     };
 }
 
+#[allow(unused)]
 pub fn null_texture() -> Texture {
     #[cfg(feature = "web")]
     return 0;
@@ -504,6 +462,7 @@ pub fn null_texture() -> Texture {
     };
 }
 
+#[allow(unused)]
 pub fn null_music() -> Music {
     #[cfg(feature = "web")]
     return 0;
@@ -523,6 +482,7 @@ pub fn null_music() -> Music {
     };
 }
 
+#[allow(unused)]
 pub fn null_image() -> Image {
     #[cfg(feature = "web")]
     return 0;
@@ -619,5 +579,28 @@ pub fn set_log_level(level: i32) {
     #[cfg(feature = "native")]
     unsafe {
         raylib::SetTraceLogLevel(level);
+    }
+}
+
+pub fn set_random_seed(seed: u32) {
+    #[cfg(feature = "web")]
+    unsafe {
+        ffi::SetRandomSeed(seed);
+    }
+    #[cfg(feature = "native")]
+    unsafe {
+        raylib::SetRandomSeed(seed);
+    }
+}
+
+// inclusive
+pub fn get_random_value(min: i32, max: i32) -> i32 {
+    #[cfg(feature = "web")]
+    {
+        unsafe { ffi::GetRandomValue(min, max) }
+    }
+    #[cfg(feature = "native")]
+    {
+        unsafe { raylib::GetRandomValue(min, max) }
     }
 }

@@ -1,14 +1,18 @@
+use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
-use webhacks::Bool;
+use u32_bool::Bool;
 
 mod log;
 
 mod anim;
 mod array2d;
+mod entity_manager;
+// mod bullet;
 mod defer;
 mod enemy;
 mod turret;
+mod u32_bool;
 mod vec2;
 mod webhacks;
 
@@ -65,83 +69,14 @@ pub struct State {
     pub path_n: u32,
     pub path_arr: *const Vector2,
     pub path_length: f32,
-    pub enemies_n: u32,
-    pub enemies_arr: *mut Enemy,
     pub mute: Bool,
-    pub turrets_n: u32,
-    pub turrets_arr: *mut Turret,
     pub life: u32,
     pub distances: *mut Array2D,
-}
-
-// implement default for State
-use std::default::Default;
-impl Default for State {
-    fn default() -> Self {
-        State {
-            all_loaded: Bool::False(),
-            curr_time: 0.0,
-            prev_time: 0.0,
-            frame_count: 0,
-            slime_pos: Vector2::zero(),
-            mouse_pos: Vector2::zero(),
-            mouse_btn: Bool::False(),
-            mouse_btn_pressed: Bool::False(),
-            music: webhacks::null_music(),
-            font: webhacks::null_font(),
-            image: webhacks::null_image(),
-            texture: webhacks::null_texture(),
-            anim_blobs_n: 0,
-            anim_blobs_arr: std::ptr::null(),
-            path_n: 0,
-            path_arr: std::ptr::null(),
-            path_length: 0.0,
-            enemies_n: 0,
-            enemies_arr: std::ptr::null_mut(),
-            mute: Bool::False(),
-            turrets_n: 0,
-            turrets_arr: std::ptr::null_mut(),
-            life: 0,
-            distances: std::ptr::null_mut(),
-        }
-    }
+    pub man_state_n: u32,
+    pub man_state_arr: *mut u32,
 }
 
 impl State {
-    fn get_turrets(&self) -> Option<&[Turret]> {
-        if self.turrets_arr.is_null() {
-            None
-        } else {
-            let slice =
-                unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
-            Some(slice)
-        }
-    }
-
-    fn set_turrets(&mut self, turrets: &[Turret]) {
-        free_malloced(self.turrets_n, self.turrets_arr);
-        let (turrets_n, turrets_arr) = clone_to_malloced(turrets);
-        self.turrets_n = turrets_n;
-        self.turrets_arr = turrets_arr;
-    }
-
-    fn get_enemies(&self) -> Option<&[Enemy]> {
-        if self.enemies_arr.is_null() {
-            None
-        } else {
-            let slice =
-                unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
-            Some(slice)
-        }
-    }
-
-    fn set_enemies(&mut self, enemies: &[Enemy]) {
-        free_malloced(self.enemies_n, self.enemies_arr);
-        let (enemies_n, enemies_arr) = clone_to_malloced(&enemies);
-        self.enemies_n = enemies_n;
-        self.enemies_arr = enemies_arr;
-    }
-
     fn get_path(&self) -> &[Vector2] {
         if self.path_arr.is_null() {
             return &[];
@@ -150,15 +85,14 @@ impl State {
         }
     }
 
-    fn get_distances(&self) -> &Array2D {
-        unsafe { &*self.distances }
-    }
-
-    fn set_distances(&mut self, distances: Array2D) {
-        let mut distances_box = unsafe { Box::from_raw(self.distances) };
-        distances_box.clear();
-        *distances_box = distances;
-        self.distances = Box::into_raw(distances_box);
+    fn man(self: &State) -> EntityManager {
+        let man: EntityManager = match self.man_state_n {
+            0 => EntityManager::new(),
+            _ => EntityManager::from_state(unsafe {
+                std::slice::from_raw_parts(self.man_state_arr, self.man_state_n as usize)
+            }),
+        };
+        man
     }
 }
 
@@ -200,11 +134,11 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
     (path_points, path_length)
 }
 
-fn make_initial_turrets() -> Vec<Turret> {
-    vec![
-        Turret::new(Vector2::new(200.0, 150.0)),
-        Turret::new(Vector2::new(400.0, 150.0)),
-    ]
+fn make_initial_turrets<'frame>(man: &mut EntityManager) {
+    let t1 = Turret::new(Vector2::new(200.0, 150.0));
+    let t2 = Turret::new(Vector2::new(400.0, 150.0));
+    man.add(Entity::Turret(t1));
+    man.add(Entity::Turret(t2));
 }
 
 pub type GameInit = fn() -> State;
@@ -227,6 +161,7 @@ pub fn game_init() -> State {
     raylib::init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "game");
 
     webhacks::init_audio_device();
+    webhacks::set_random_seed(42);
 
     let music = webhacks::load_music_stream("assets/hello_03.wav");
 
@@ -240,23 +175,30 @@ pub fn game_init() -> State {
     let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(&path_points);
 
-    let turrets = make_initial_turrets();
-    let (turrets_n, turrets_arr) = clone_to_malloced(&turrets);
+    let mut man = EntityManager::new();
+
+    make_initial_turrets(&mut man);
+    // let (turrets_n, turrets_arr) = clone_to_malloced(&turrets);
 
     let distances = Array2D::new(0, 0);
 
     // move to static memory
     let distances_ptr = Box::into_raw(Box::new(distances));
 
+    let man_state = man.to_state();
+    let mut man_state = std::mem::ManuallyDrop::new(man_state);
+    let man_state_n = man_state.len() as u32;
+    let man_state_arr = man_state.as_mut_ptr();
+
     State {
-        all_loaded: Bool::False(),
+        all_loaded: false.into(),
         curr_time: webhacks::get_time() as f32,
         prev_time: 0.0,
         frame_count: 99,
         slime_pos: Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0 + 50.0),
         mouse_pos: Vector2::new(0.0, 0.0),
-        mouse_btn: Bool::False(),
-        mouse_btn_pressed: Bool::False(),
+        mouse_btn: false.into(),
+        mouse_btn_pressed: false.into(),
         music: music,
         font: font,
         image: image,
@@ -266,13 +208,15 @@ pub fn game_init() -> State {
         path_n: path_n,
         path_arr: path_arr,
         path_length: path_length,
-        enemies_n: 0,
-        enemies_arr: std::ptr::null_mut(),
-        mute: Bool::True(),
-        turrets_n: turrets_n,
-        turrets_arr: turrets_arr,
+        // enemies_n: 0,
+        // enemies_arr: std::ptr::null_mut(),
+        mute: true.into(),
+        // turrets_n: turrets_n,
+        // turrets_arr: turrets_arr,
         distances: distances_ptr,
         life: 20,
+        man_state_n: man_state_n,
+        man_state_arr: man_state_arr,
     }
 }
 
@@ -296,6 +240,7 @@ fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
     (n, ptr)
 }
 
+#[allow(unused)]
 fn free_malloced<T>(len: u32, ptr: *mut T) {
     if ptr.is_null() {
         return;
@@ -346,7 +291,7 @@ pub fn game_load(state: &mut State) {
     }
 
     if !any_not_loaded {
-        state.all_loaded = Bool::True();
+        state.all_loaded = true.into();
 
         // Once we've determined that init/load is done, we can unload some resources
 
@@ -416,7 +361,7 @@ fn handle_keys(state: &mut State) {
 
     // if raylib::IsKeyPressed(KEY::M) {
     if webhacks::is_key_pressed(KEY::M) {
-        state.mute.toggle();
+        state.mute = !state.mute;
         webhacks::set_music_volume(state.music, if state.mute.into() { 0.0 } else { 1.0 });
     }
 }
@@ -466,83 +411,100 @@ fn draw_slime_at_pos(
 }
 
 fn update_entities(state: &mut State) {
-    let mut enemies = state.get_enemies().unwrap_or_default().to_vec();
-    let mut turrets = state.get_turrets().unwrap_or_default().to_vec();
+    // let mut man = state.man();
+    let mut man = state.man();
 
-    match enemies.as_slice() {
-        [.., last] => {
-            if state.curr_time - last.spawn_time > SPAWN_INTERVAL {
-                enemies.push(Enemy::new(state.curr_time));
+    {
+        let last_enemy = { man.enemies().unwrap_or_default().last() };
+
+        match last_enemy {
+            Some(Enemy {
+                spawn_time: last_spawn_time,
+                ..
+            }) if state.curr_time - *last_spawn_time > SPAWN_INTERVAL => {
+                man.add(Enemy::new(state.curr_time).into());
+            }
+            None => {
+                // no enemies
+                man.add(Enemy::new(state.curr_time).into());
+            }
+            _ => {}
+        }
+
+        let enemies = man.enemies_mut().unwrap_or_default();
+
+        let mut life_lost = 0;
+        for enemy in enemies.iter_mut() {
+            enemy.update(state);
+
+            if enemy.position >= state.path_length {
+                enemy.dead = true.into();
+                life_lost += 1;
+            };
+
+            if enemy.health <= 0.0 {
+                enemy.dead = true.into();
             }
         }
-        _ => {
-            // no enemies
-            enemies.push(Enemy::new(state.curr_time));
+
+        // println!("life_lost: {}", life_lost);
+        state.life -= std::cmp::min(life_lost, state.life);
+    }
+
+    {
+        let turrets = man.turrets_mut().unwrap_or_default();
+
+        let mut any_dead = false;
+        for turret in turrets.iter_mut() {
+            turret.update(state);
+            any_dead = any_dead || turret.dead.into();
+        }
+
+        if !any_dead && state.mouse_btn_pressed.into() {
+            man.add(Turret::new(state.mouse_pos).into());
         }
     }
 
-    let mut n_dead = 0;
-    for enemy in enemies.iter_mut() {
-        enemy.update(state);
-        n_dead += <Bool as Into<u32>>::into(enemy.dead);
-    }
-
-    state.life -= std::cmp::min(n_dead, state.life);
-
-    enemies = enemies
-        .into_iter()
-        .filter(|enemy| (!enemy.dead).into())
-        .collect();
-
-    let mut any_dead = false;
-    for turret in turrets.iter_mut() {
-        turret.update(state);
-        any_dead = any_dead || turret.dead.into();
-    }
-
-    if !any_dead && state.mouse_btn_pressed.into() {
-        // check if we've clicked with
-        turrets.push(Turret::new(state.mouse_pos));
-    }
-
-    turrets = turrets
-        .into_iter()
-        .filter(|turret| (!turret.dead).into())
-        .collect();
+    // filter dead entities
+    man.filter_dead();
 
     // distances will be a 2D array of size enemies.len() x turret.len() + 1
     // mouse will be tracked as the last row
 
-    let mut distances = Array2D::new(enemies.len(), turrets.len() + 1);
+    // let mut distances = Array2D::new(enemies.len(), turrets.len() + 1);
 
-    for (i, enemy) in enemies.iter().enumerate() {
-        for (j, turret) in turrets.iter().enumerate() {
-            let dist = enemy
-                .screen_position(state.get_path())
-                .dist(&turret.position);
-            distances.set(i, j, dist);
-        }
-        let mouse_dist = enemy
-            .screen_position(state.get_path())
-            .dist(&state.mouse_pos);
-        distances.set(i, turrets.len(), mouse_dist);
-    }
+    // for (i, enemy) in enemies.iter().enumerate() {
+    //     for (j, turret) in turrets.iter().enumerate() {
+    //         let dist = enemy
+    //             .screen_position(state.get_path())
+    //             .dist(&turret.position);
+    //         distances.set(i, j, dist);
+    //     }
+    //     let mouse_dist = enemy
+    //         .screen_position(state.get_path())
+    //         .dist(&state.mouse_pos);
+    //     distances.set(i, turrets.len(), mouse_dist);
+    // }
 
-    state.set_distances(distances);
-    state.set_enemies(&enemies);
-    state.set_turrets(&turrets);
+    // println!("man {}", man);
+
+    // save the man state
+    let man_state = man.to_state();
+    let mut man_state = std::mem::ManuallyDrop::new(man_state);
+    state.man_state_n = man_state.len() as u32;
+    state.man_state_arr = man_state.as_mut_ptr();
 }
 
 fn draw_entities_background(state: &State) {
-    let enemies = state.get_enemies().unwrap_or_default();
-    let turrets = state.get_turrets().unwrap_or_default();
-
-    let distances = state.get_distances();
+    let enemies = state.man().enemies().unwrap_or_default().to_vec();
+    let turrets = state.man().turrets().unwrap_or_default().to_vec();
 
     // draw lines from enemies to turrets if they are within range
-    for (i, enemy) in enemies.iter().enumerate() {
-        for (j, turret) in turrets.iter().enumerate() {
-            let distance = distances.get(i, j).clone();
+    for enemy in enemies.iter() {
+        for turret in turrets.iter() {
+            let distance = enemy
+                .screen_position(state.get_path())
+                .dist(&turret.position);
             if distance < ACTIVE_RADIUS {
                 let enemy_pos = enemy.screen_position(state.get_path());
                 webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
@@ -551,8 +513,10 @@ fn draw_entities_background(state: &State) {
     }
 
     // draw line to mouse if it's within range
-    for (i, enemy) in enemies.iter().enumerate() {
-        let distance = distances.get(i, distances.height() - 1).clone();
+    for enemy in enemies.iter() {
+        let distance = enemy
+            .screen_position(state.get_path())
+            .dist(&state.mouse_pos);
         if distance < ACTIVE_RADIUS {
             let enemy_pos = enemy.screen_position(state.get_path());
             webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
@@ -568,8 +532,10 @@ fn draw_entities_background(state: &State) {
 }
 
 fn draw_entities_foreground(state: &State) {
-    let enemies = state.get_enemies().unwrap_or_default();
-    let turrets = state.get_turrets().unwrap_or_default();
+    // let man = state.man();
+    let man = state.man();
+    let enemies = man.enemies().unwrap_or_default();
+    let turrets = man.turrets().unwrap_or_default();
 
     for (i, enemy) in enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
@@ -660,6 +626,9 @@ pub fn game_frame(state: &mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
+    // temp_debug_function(state);
+    // println!("and even here");
+
     update_entities(state);
 
     let game_over = state.life == 0;
@@ -720,6 +689,9 @@ pub fn game_frame(state: &mut State) {
 
     // Update the frame count
     state.frame_count += 1;
+
+    // let rand = webhacks::get_random_value(0, 10);
+    // log::info(format!("random: {}", rand).as_str());
 }
 
 #[no_mangle]

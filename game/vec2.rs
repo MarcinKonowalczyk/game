@@ -161,3 +161,11 @@ impl Into<raylib_wasm::Vector2> for Vector2 {
         }
     }
 }
+
+use std::default::Default;
+
+impl Default for Vector2 {
+    fn default() -> Self {
+        Vector2::zero()
+    }
+}

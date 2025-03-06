@@ -240,6 +240,34 @@ const LOG_LEVELS = {
 
 let info = (msg) => _log(LOG_LEVELS.INFO, msg);
 
+// setup the game RNG
+// https://stackoverflow.com/a/47593316
+function sfc32(a, b, c, d) {
+    return function () {
+        a |= 0; b |= 0; c |= 0; d |= 0;
+        let t = (a + b | 0) + d | 0;
+        d = d + 1 | 0;
+        a = b ^ b >>> 9;
+        b = c + (c << 3) | 0;
+        c = (c << 21 | c >>> 11);
+        c = c + t | 0;
+        return (t >>> 0) / 4294967296;
+    }
+}
+
+let _seed = (Math.random() * 2 ** 32) >>> 0;
+let rand = sfc32(_seed, _seed, _seed, _seed);
+const warmup = () => {
+    for (let i = 0; i < 1000; i++) {
+        rand();
+    }
+}
+
+const set_seed = (seed) => {
+    rand = sfc32(seed, seed, seed, seed);
+    warmup();
+}
+
 WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
     "env": make_environment({
         // pub fn ConsoleLog(msg: *const i8, n: i32, args: *const *const i8);
@@ -699,6 +727,12 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.closePath();
             CTX.lineWidth = 1;
         },
+        // pub fn SetRandomSeed(seed: u32);
+        SetRandomSeed: (seed) => set_seed(seed),
+        // pub fn GetRandomValue(min: i32, max: i32) -> i32
+        GetRandomValue(min, max) {
+            return Math.floor(rand() * (max - min + 1) + min);
+        }
     })
 }).then(w => {
     WASM = w;
@@ -734,9 +768,7 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
           [uuuu]*{anim_blobs}
           [f{x}f{y}]*{path}
           f{path_length}
-          [fffffb]*{enemies}
           b{mute}
-          [[f{x}f{y}]{position}b{dead}b{hover}]*{turrets}
           u{life}
           `;
         const buffer = WASM.instance.exports.memory.buffer;
