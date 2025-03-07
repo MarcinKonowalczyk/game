@@ -78,8 +78,7 @@ impl Enemy {
     }
 
     pub fn update(&mut self, state: &State) {
-        let dt = state.curr_time - state.prev_time;
-        self.position += SPEED_ENEMY * dt;
+        self.position += SPEED_ENEMY * state.dt();
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {

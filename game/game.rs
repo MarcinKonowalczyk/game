@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
@@ -7,10 +9,10 @@ mod log;
 
 mod anim;
 mod array2d;
-mod entity_manager;
-// mod bullet;
+mod bullet;
 mod defer;
 mod enemy;
+mod entity_manager;
 mod turret;
 mod u32_bool;
 mod vec2;
@@ -93,6 +95,17 @@ impl State {
             }),
         };
         man
+    }
+
+    fn save_man(&mut self, man: EntityManager) {
+        let man_state = man.to_state();
+        let mut man_state = std::mem::ManuallyDrop::new(man_state);
+        self.man_state_n = man_state.len() as u32;
+        self.man_state_arr = man_state.as_mut_ptr();
+    }
+
+    fn dt(&self) -> f32 {
+        self.curr_time - self.prev_time
     }
 }
 
@@ -412,9 +425,11 @@ fn draw_slime_at_pos(
 
 fn update_entities(state: &mut State) {
     // let mut man = state.man();
-    let mut man = state.man();
+    // let mut man = state.man();
 
     {
+        let mut man = state.man();
+
         let last_enemy = { man.enemies().unwrap_or_default().last() };
 
         match last_enemy {
@@ -449,55 +464,53 @@ fn update_entities(state: &mut State) {
 
         // println!("life_lost: {}", life_lost);
         state.life -= std::cmp::min(life_lost, state.life);
+
+        let bullets = man.bullets_mut().unwrap_or_default();
+
+        for bullet in bullets.iter_mut() {
+            bullet.update(state);
+        }
+
+        state.save_man(man);
     }
 
     {
-        let turrets = man.turrets_mut().unwrap_or_default();
-
         let mut any_dead = false;
-        for turret in turrets.iter_mut() {
+        for turret in state.man().turrets_mut().unwrap_or_default().iter_mut() {
             turret.update(state);
             any_dead = any_dead || turret.dead.into();
         }
 
         if !any_dead && state.mouse_btn_pressed.into() {
-            man.add(Turret::new(state.mouse_pos).into());
+            state.man().add(Turret::new(state.mouse_pos).into());
         }
+        // state.save_man(man);
     }
 
     // filter dead entities
-    man.filter_dead();
+    {
+        let mut man = state.man();
+        man.filter_dead();
+        state.save_man(man);
+    }
 
-    // distances will be a 2D array of size enemies.len() x turret.len() + 1
-    // mouse will be tracked as the last row
-
-    // let mut distances = Array2D::new(enemies.len(), turrets.len() + 1);
-
-    // for (i, enemy) in enemies.iter().enumerate() {
-    //     for (j, turret) in turrets.iter().enumerate() {
-    //         let dist = enemy
-    //             .screen_position(state.get_path())
-    //             .dist(&turret.position);
-    //         distances.set(i, j, dist);
-    //     }
-    //     let mouse_dist = enemy
-    //         .screen_position(state.get_path())
-    //         .dist(&state.mouse_pos);
-    //     distances.set(i, turrets.len(), mouse_dist);
-    // }
-
-    // println!("man {}", man);
+    // let mut sorted_ids = man.ids.iter().copied().collect::<Vec<_>>();
+    // sorted_ids.sort();
+    // println!("{:?}", sorted_ids);
 
     // save the man state
-    let man_state = man.to_state();
-    let mut man_state = std::mem::ManuallyDrop::new(man_state);
-    state.man_state_n = man_state.len() as u32;
-    state.man_state_arr = man_state.as_mut_ptr();
+    // let man_state = man.to_state();
+    // let mut man_state = std::mem::ManuallyDrop::new(man_state);
+    // state.man_state_n = man_state.len() as u32;
+    // state.man_state_arr = man_state.as_mut_ptr();
+
+    // state.save_man(man);
 }
 
 fn draw_entities_background(state: &State) {
     let enemies = state.man().enemies().unwrap_or_default().to_vec();
     let turrets = state.man().turrets().unwrap_or_default().to_vec();
+    let bullets = state.man().bullets().unwrap_or_default().to_vec();
 
     // draw lines from enemies to turrets if they are within range
     for enemy in enemies.iter() {
@@ -529,6 +542,10 @@ fn draw_entities_background(state: &State) {
     for (i, turret) in turrets.iter().enumerate() {
         turret.draw_background(i, state);
     }
+
+    for (i, bullet) in bullets.iter().enumerate() {
+        bullet.draw_background(i, state);
+    }
 }
 
 fn draw_entities_foreground(state: &State) {
@@ -536,12 +553,16 @@ fn draw_entities_foreground(state: &State) {
     let man = state.man();
     let enemies = man.enemies().unwrap_or_default();
     let turrets = man.turrets().unwrap_or_default();
+    let bullets = man.bullets().unwrap_or_default();
 
     for (i, enemy) in enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
     }
     for (i, turret) in turrets.iter().enumerate() {
         turret.draw_foreground(i, state);
+    }
+    for (i, bullet) in bullets.iter().enumerate() {
+        bullet.draw_foreground(i, state);
     }
 }
 
@@ -626,9 +647,6 @@ pub fn game_frame(state: &mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    // temp_debug_function(state);
-    // println!("and even here");
-
     update_entities(state);
 
     let game_over = state.life == 0;
@@ -689,9 +707,6 @@ pub fn game_frame(state: &mut State) {
 
     // Update the frame count
     state.frame_count += 1;
-
-    // let rand = webhacks::get_random_value(0, 10);
-    // log::info(format!("random: {}", rand).as_str());
 }
 
 #[no_mangle]

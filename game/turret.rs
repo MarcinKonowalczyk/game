@@ -1,5 +1,6 @@
 use raylib_wasm::PINK;
 
+use crate::bullet::Bullet;
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
 
@@ -13,12 +14,24 @@ use crate::ACTIVE_RADIUS;
 use crate::ALPHA_BEIGE;
 use crate::TURRET_RADIUS;
 
+const FIRE_COOLDOWN: f32 = 0.5; // seconds
+
 #[derive(Clone, Debug)]
 pub struct Turret {
     pub position: Vector2,
     pub dead: Bool,
     pub hover: Bool,
+    pub fire_cooldown: f32,
     pub id: EntityId,
+}
+
+#[inline]
+fn min_f32(a: f32, b: f32) -> f32 {
+    if a < b {
+        a
+    } else {
+        b
+    }
 }
 
 impl Turret {
@@ -27,11 +40,12 @@ impl Turret {
             position,
             dead: false.into(),
             hover: false.into(),
+            fire_cooldown: FIRE_COOLDOWN,
             id: 0,
         }
     }
 
-    pub fn update(&mut self, state: &State) {
+    pub fn update(&mut self, state: &mut State) {
         let mouse_distance = self.position.dist(&state.mouse_pos);
         if mouse_distance < TURRET_RADIUS {
             self.hover = true.into();
@@ -44,6 +58,23 @@ impl Turret {
             // despawn the turret
             self.dead = true.into();
         }
+
+        self.fire_cooldown -= state.dt();
+        if self.fire_cooldown <= 0.0 {
+            self.fire_cooldown = FIRE_COOLDOWN;
+            self.fire(state);
+        }
+    }
+
+    fn fire(&self, state: &mut State) {
+        // let target = state.get_closest_enemy(self.position);
+        // if let Some(target) = target {
+        // let bullet = Bullet::new(self.position, self, target);
+        // state.add_entity(Box::new(bullet));
+        // }
+        let mut man = state.man();
+        man.add(Bullet::new(self.position, Some(self), None).into());
+        state.save_man(man);
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {
