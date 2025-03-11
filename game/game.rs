@@ -8,7 +8,6 @@ use u32_bool::Bool;
 mod log;
 
 mod anim;
-mod array2d;
 mod bullet;
 mod defer;
 mod enemy;
