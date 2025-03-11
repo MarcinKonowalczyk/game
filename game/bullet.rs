@@ -58,8 +58,8 @@ impl Bullet {
         }
     }
 
-    pub fn update(&self, state: &RefCell<State>) -> BulletUpdate {
-        let dt = state.borrow().dt();
+    pub fn update(&self, state: &State) -> BulletUpdate {
+        let dt = state.dt();
 
         let mut update = BulletUpdate::from(self);
 

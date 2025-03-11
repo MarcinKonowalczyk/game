@@ -1,3 +1,5 @@
+// #![deny(unused_results)]
+
 use std::cell::RefCell;
 
 use entity_manager::{Entity, EntityManager};
@@ -430,7 +432,21 @@ fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> u32 {
     frame
 }
 
-fn handle_keys(state: &RefCell<State>) {
+struct HandleKeysUpdate {
+    slime_pos: Vector2,
+    mute: bool,
+}
+
+impl From<&State> for HandleKeysUpdate {
+    fn from(state: &State) -> Self {
+        HandleKeysUpdate {
+            slime_pos: state.slime_pos,
+            mute: state.mute.into(),
+        }
+    }
+}
+
+fn handle_keys(state: &State) -> HandleKeysUpdate {
     let speed = unsafe {
         if raylib::IsKeyDown(KEY::Space) {
             SPEED_BOOSTED
@@ -448,38 +464,53 @@ fn handle_keys(state: &RefCell<State>) {
         a = raylib::IsKeyDown(KEY::A);
         d = raylib::IsKeyDown(KEY::D);
     }
-    {
-        let mut state = state.borrow_mut();
-        state.slime_pos.y -= dt * speed * (w as i32 as f32);
-        state.slime_pos.y += dt * speed * (s as i32 as f32);
-        state.slime_pos.x -= dt * speed * (a as i32 as f32);
-        state.slime_pos.x += dt * speed * (d as i32 as f32);
 
-        // prevent the rect from wandering off the screen too far
-        if state.slime_pos.x < -100.0 {
-            state.slime_pos.x = -100.0;
-        } else if state.slime_pos.x > WINDOW_WIDTH as f32 {
-            state.slime_pos.x = WINDOW_WIDTH as f32;
-        }
+    let mut update = HandleKeysUpdate::from(state);
 
-        if state.slime_pos.y < -100.0 {
-            state.slime_pos.y = -100.0;
-        } else if state.slime_pos.y > WINDOW_HEIGHT as f32 {
-            state.slime_pos.y = WINDOW_HEIGHT as f32;
-        }
+    update.slime_pos.y -= dt * speed * (w as i32 as f32);
+    update.slime_pos.y += dt * speed * (s as i32 as f32);
+    update.slime_pos.x -= dt * speed * (a as i32 as f32);
+    update.slime_pos.x += dt * speed * (d as i32 as f32);
+
+    // prevent the rect from wandering off the screen too far
+    if update.slime_pos.x < -100.0 {
+        update.slime_pos.x = -100.0;
+    } else if update.slime_pos.x > WINDOW_WIDTH as f32 {
+        update.slime_pos.x = WINDOW_WIDTH as f32;
     }
 
-    {
-        let mut state = state.borrow_mut();
-        // if raylib::IsKeyPressed(KEY::M) {
-        if webhacks::is_key_pressed(KEY::M) {
-            state.mute = !state.mute;
-            webhacks::set_music_volume(state.music, if state.mute.into() { 0.0 } else { 1.0 });
+    if update.slime_pos.y < -100.0 {
+        update.slime_pos.y = -100.0;
+    } else if update.slime_pos.y > WINDOW_HEIGHT as f32 {
+        update.slime_pos.y = WINDOW_HEIGHT as f32;
+    }
+
+    // if raylib::IsKeyPressed(KEY::M) {
+    if webhacks::is_key_pressed(KEY::M) {
+        update.mute = !update.mute;
+        webhacks::set_music_volume(state.music, if update.mute { 0.0 } else { 1.0 });
+    }
+
+    update
+}
+
+struct HandleMouseUpdate {
+    mouse_pos: Vector2,
+    mouse_btn: bool,
+    mouse_btn_pressed: bool,
+}
+
+impl From<&State> for HandleMouseUpdate {
+    fn from(state: &State) -> Self {
+        HandleMouseUpdate {
+            mouse_pos: state.mouse_pos,
+            mouse_btn: state.mouse_btn.into(),
+            mouse_btn_pressed: state.mouse_btn_pressed.into(),
         }
     }
 }
 
-fn handle_mouse(state: &RefCell<State>) {
+fn handle_mouse(state: &State) -> HandleMouseUpdate {
     let mut mouse_pos = webhacks::get_mouse_position();
     let is_outside = mouse_pos.x < 0.0
         || mouse_pos.y < 0.0
@@ -488,14 +519,13 @@ fn handle_mouse(state: &RefCell<State>) {
     if is_outside {
         mouse_pos = Vector2::new(-1.0, -1.0);
     }
-    let mut state = state.borrow_mut();
-    state.mouse_pos = mouse_pos;
-    state.mouse_btn = Bool {
-        value: webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32,
-    };
-    state.mouse_btn_pressed = Bool {
-        value: webhacks::is_mouse_button_pressed(MouseButton::Left as i32) as u32,
-    };
+
+    let mut update = HandleMouseUpdate::from(state);
+    update.mouse_pos = mouse_pos;
+    update.mouse_btn = webhacks::is_mouse_button_down(MouseButton::Left as i32);
+    update.mouse_btn_pressed = webhacks::is_mouse_button_pressed(MouseButton::Left as i32);
+
+    update
 }
 
 fn draw_slime_at_pos(
@@ -524,13 +554,14 @@ fn draw_slime_at_pos(
     // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
-fn update_entities(state: &RefCell<State>) {
+fn update_entities(state: &State) -> u32 {
+    let mut life_lost: u32;
+
     {
         // let mut man = state_to_man(state);
-        let curr_time = { state.borrow().curr_time };
+        let curr_time = state.curr_time;
 
         let last_enemy = {
-            let state = state.borrow();
             let man = state.man.borrow();
             man.enemies.last().cloned()
         };
@@ -543,25 +574,16 @@ fn update_entities(state: &RefCell<State>) {
                 // let state = state.borrow();
                 // let mut man = state.man.borrow_mut();
                 // man.add(Enemy::new(curr_time).into());
-                state
-                    .borrow()
-                    .man
-                    .borrow_mut()
-                    .add(Enemy::new(curr_time).into());
+                state.man.borrow_mut().add(Enemy::new(curr_time).into());
             }
             None => {
                 // no enemies
-                state
-                    .borrow()
-                    .man
-                    .borrow_mut()
-                    .add(Enemy::new(curr_time).into());
+                state.man.borrow_mut().add(Enemy::new(curr_time).into());
             }
             _ => {}
         }
 
         let updates = state
-            .borrow()
             .man
             .borrow()
             .enemies
@@ -570,28 +592,23 @@ fn update_entities(state: &RefCell<State>) {
             .collect::<Vec<_>>();
 
         // Calculate the total damage done by the enemies
-        let life_lost = updates.iter().map(|update| update.damage_done).sum::<u32>();
+        life_lost = updates.iter().map(|update| update.damage_done).sum::<u32>();
+        life_lost = std::cmp::min(life_lost, state.life);
 
         // Apply the updates
-        for (enemy, update) in std::iter::Iterator::zip(
-            state.borrow().man.borrow_mut().enemies.iter_mut(),
-            updates.iter(),
-        ) {
+        for (enemy, update) in
+            std::iter::Iterator::zip(state.man.borrow_mut().enemies.iter_mut(), updates.iter())
+        {
             enemy.apply(update);
         }
 
         // println!("life_lost: {}", life_lost);
-        {
-            let mut state = state.borrow_mut();
-            state.life -= std::cmp::min(life_lost, state.life);
-        }
 
         // state.save_man(man);
     }
     {
         // Get all the bullet updates
         let updates = state
-            .borrow()
             .man
             .borrow()
             .bullets
@@ -600,17 +617,15 @@ fn update_entities(state: &RefCell<State>) {
             .collect::<Vec<_>>();
 
         // Apply all the updates
-        for (bullet, update) in std::iter::Iterator::zip(
-            state.borrow().man.borrow_mut().bullets.iter_mut(),
-            updates.iter(),
-        ) {
+        for (bullet, update) in
+            std::iter::Iterator::zip(state.man.borrow_mut().bullets.iter_mut(), updates.iter())
+        {
             bullet.apply(update);
         }
     }
     {
         // Get all the turret updates
         let updates = state
-            .borrow()
             .man
             .borrow()
             .turrets
@@ -622,10 +637,9 @@ fn update_entities(state: &RefCell<State>) {
         let any_dead = updates.iter().any(|update| update.dead.into());
 
         // Apply all the updates
-        for (turret, update) in std::iter::Iterator::zip(
-            state.borrow().man.borrow_mut().turrets.iter_mut(),
-            updates.iter(),
-        ) {
+        for (turret, update) in
+            std::iter::Iterator::zip(state.man.borrow_mut().turrets.iter_mut(), updates.iter())
+        {
             turret.apply(update);
         }
 
@@ -637,36 +651,24 @@ fn update_entities(state: &RefCell<State>) {
 
         // Spawn new bullets
         {
-            let state = state.borrow();
             let mut man = state.man.borrow_mut();
             for bullet in new_bullets {
                 man.add(bullet.into());
             }
         }
 
-        if !any_dead && { state.borrow().mouse_btn_pressed.into() } {
+        if !any_dead && { state.mouse_btn_pressed.into() } {
             state
-                .borrow()
                 .man
                 .borrow_mut()
-                .add(Turret::new(state.borrow().mouse_pos).into());
+                .add(Turret::new(state.mouse_pos).into());
         }
     }
 
     // filter dead entities
-    state.borrow().man.borrow_mut().filter_dead();
+    state.man.borrow_mut().filter_dead();
 
-    // let mut sorted_ids = man.ids.iter().copied().collect::<Vec<_>>();
-    // sorted_ids.sort();
-    // println!("{:?}", sorted_ids);
-
-    // save the man state
-    // let man_state = man.to_state();
-    // let mut man_state = std::mem::ManuallyDrop::new(man_state);
-    // state.man_state_n = man_state.len() as u32;
-    // state.man_state_arr = man_state.as_mut_ptr();
-
-    // state.save_man(man);
+    life_lost
 }
 
 fn draw_entities_background(state: &RefCell<State>) {
@@ -806,21 +808,28 @@ fn draw_text(state: &RefCell<State>) {
 pub type GameFrame = fn(state: *mut State);
 
 #[no_mangle]
-pub fn game_frame(_state: *mut State) {
-    let state = RefCell::new(unsafe { std::ptr::read(_state) });
+pub fn game_frame(state_ptr: *mut State) {
+    let mut _state = unsafe { std::ptr::read(state_ptr) };
+
+    let life_lost = update_entities(&_state);
+    _state.life -= life_lost;
+
+    let game_over = _state.life == 0;
+
+    let update = handle_keys(&_state);
+    _state.slime_pos = update.slime_pos;
+    _state.mute = update.mute.into();
+
+    let update = handle_mouse(&_state);
+    _state.mouse_pos = update.mouse_pos;
+    _state.mouse_btn = update.mouse_btn.into();
+    _state.mouse_btn_pressed = update.mouse_btn_pressed.into();
+
+    let state = RefCell::new(_state);
     {
         let mut state = state.borrow_mut();
         state.prev_time = state.curr_time;
         state.curr_time = webhacks::get_time() as f32;
-    }
-
-    update_entities(&state);
-
-    let game_over = { state.borrow().life == 0 };
-
-    if !game_over {
-        handle_keys(&state);
-        handle_mouse(&state);
     }
 
     unsafe { raylib::BeginDrawing() };
@@ -884,7 +893,7 @@ pub fn game_frame(_state: *mut State) {
 
     // Write back the state
     unsafe {
-        std::ptr::write(_state, state.into_inner());
+        std::ptr::write(state_ptr, state.into_inner());
     }
 }
 

@@ -67,10 +67,10 @@ impl Turret {
         }
     }
 
-    pub fn update(&self, state: &RefCell<State>) -> TurretUpdate {
-        let mouse_pos = { state.borrow().mouse_pos };
-        let mouse_btn_pressed = { state.borrow().mouse_btn_pressed };
-        let dt = { state.borrow().dt() };
+    pub fn update(&self, state: &State) -> TurretUpdate {
+        let mouse_pos = state.mouse_pos;
+        let mouse_btn_pressed = state.mouse_btn_pressed;
+        let dt = state.dt();
         let mouse_distance = self.position.dist(&mouse_pos);
 
         let mut update = TurretUpdate::from(self);

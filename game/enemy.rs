@@ -98,11 +98,11 @@ impl Enemy {
         }
     }
 
-    pub fn update(&self, state: &RefCell<State>) -> EnemyUpdate {
-        let path_length = { state.borrow().path_length };
+    pub fn update(&self, state: &State) -> EnemyUpdate {
+        let path_length = { state.path_length };
 
         let mut update = EnemyUpdate::from(self);
-        update.position += SPEED_ENEMY * state.borrow().dt();
+        update.position += SPEED_ENEMY * state.dt();
 
         if update.position >= path_length {
             update.dead = true;
