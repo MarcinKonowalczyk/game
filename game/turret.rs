@@ -7,8 +7,6 @@ use crate::vec2::Vector2;
 use crate::entity_manager::{EntityId, HasId};
 use crate::webhacks;
 use crate::State;
-use std::cell::RefCell;
-use std::str;
 
 use crate::u32_bool::Bool;
 
@@ -41,7 +39,6 @@ pub struct TurretUpdate {
     pub dead: bool,
     pub fire_cooldown: f32,
     pub hover: bool,
-    pub new_bullet: Option<Bullet>,
 }
 
 impl From<&Turret> for TurretUpdate {
@@ -51,7 +48,6 @@ impl From<&Turret> for TurretUpdate {
             dead: turret.dead.into(),
             fire_cooldown: turret.fire_cooldown,
             hover: turret.hover.into(),
-            new_bullet: None,
         }
     }
 }
@@ -67,7 +63,7 @@ impl Turret {
         }
     }
 
-    pub fn update(&self, state: &State) -> TurretUpdate {
+    pub fn update(&self, state: &State) -> (TurretUpdate, Option<Bullet>) {
         let mouse_pos = state.mouse_pos;
         let mouse_btn_pressed = state.mouse_btn_pressed;
         let dt = state.dt();
@@ -89,12 +85,15 @@ impl Turret {
         }
 
         update.fire_cooldown -= dt;
-        if update.fire_cooldown <= 0.0 {
+        let bullet = if update.fire_cooldown <= 0.0 {
             update.fire_cooldown = FIRE_COOLDOWN;
-            self.fire(&mut update);
-        }
+            // self.fire(&mut update);
+            Some(self.fire(&update))
+        } else {
+            None
+        };
 
-        update
+        (update, bullet)
     }
 
     pub fn apply(&mut self, update: &TurretUpdate) {
@@ -104,9 +103,8 @@ impl Turret {
         self.hover = update.hover.into();
     }
 
-    fn fire(&self, update: &mut TurretUpdate) {
-        let new_bullet = Bullet::new(self.position, Some(self), None);
-        update.new_bullet = Some(new_bullet);
+    fn fire(&self, update: &TurretUpdate) -> Bullet {
+        Bullet::new(self.position, Some(self), None)
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {

@@ -1,7 +1,5 @@
 // #![deny(unused_results)]
 
-use std::cell::RefCell;
-
 use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
@@ -75,26 +73,8 @@ pub struct State {
     pub life: u32,
     // pub man_state_n: u32,
     // pub man_state_arr: *mut u32,
-    pub man: RefCell<EntityManager>,
+    pub man: EntityManager,
 }
-
-// fn state_to_man(state: std::rc::Rc<RefCell<State>>) -> EntityManager {
-//     let man_state_n = { state.borrow().man_state_n };
-//     let man: EntityManager = match man_state_n {
-//         0 => panic!("State has no EntityManager"),
-//         _ => {
-//             let state_rc = Rc::downgrade(&state);
-//             let man = EntityManager::from_state(
-//                 unsafe {
-//                     std::slice::from_raw_parts(self.man_state_arr, self.man_state_n as usize)
-//                 },
-//                 state_rc,
-//             );
-//             man
-//         }
-//     };
-//     man
-// }
 
 impl State {
     fn get_path(&self) -> &[Vector2] {
@@ -105,70 +85,10 @@ impl State {
         }
     }
 
-    // fn save_man(&mut self, man: EntityManager) {
-    //     let man_state = man.to_state();
-    //     let mut man_state = std::mem::ManuallyDrop::new(man_state);
-    //     self.man_state_n = man_state.len() as u32;
-    //     self.man_state_arr = man_state.as_mut_ptr();
-    // }
-
     fn dt(&self) -> f32 {
         self.curr_time - self.prev_time
     }
 }
-
-// pub type StateRef<'a> = std::rc::Rc<RefCell<State<'a>>>;
-// pub type StateWeakRef<'a> = std::rc::Weak<RefCell<State<'a>>>;
-
-// trait StateCellExt {
-//     fn man(&self) -> EntityManager;
-// }
-
-// impl StateCellExt for RefCell<&mut State> {
-//     fn man(&self) -> EntityManager {
-//         let man_state_n = { self.borrow().man_state_n };
-//         let man_state_arr = { self.borrow().man_state_arr };
-//         let man: EntityManager = match man_state_n {
-//             0 => EntityManager::new(self),
-//             _ => EntityManager::from_state(
-//                 unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
-//                 self,
-//             ),
-//         };
-//         man
-//     }
-// }
-
-// impl<'a> StateRefExt<'a> for StateRef<'a> {
-//     fn man<'b: 'a>(self: &'b StateRef<'a>) -> EntityManager<'b> {
-//         let man_state_n = { self.borrow().man_state_n };
-//         let man_state_arr = { self.borrow().man_state_arr };
-//         let man: EntityManager = match man_state_n {
-//             0 => EntityManager::new(self.clone()),
-//             _ => EntityManager::from_state(
-//                 unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
-//                 self.clone(),
-//             ),
-//         };
-//         man
-//     }
-// }
-
-// fn state_to_man(state: StateRef) -> RefCell<EntityManager> {
-//     let man_state_n = { state.borrow().man_state_n };
-//     let man_state_arr = { state.borrow().man_state_arr };
-//     let state_ref = Rc::downgrade(&state);
-//     let man: EntityManager = match man_state_n {
-//         0 => EntityManager::new(state_ref),
-//         _ => EntityManager::from_state(
-//             unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
-//             state_ref,
-//         ),
-//     };
-//     man
-// }
-// statically check that the State struct is the same size as the C struct
-// this is important because we're going to be passing this struct back and forth between Rust and C
 
 #[no_mangle]
 pub fn get_state_size() -> usize {
@@ -205,8 +125,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
     (path_points, path_length)
 }
 
-fn make_initial_turrets(man: &RefCell<EntityManager>) {
-    let mut man = man.borrow_mut();
+fn make_initial_turrets(man: &mut EntityManager) {
     let t1 = Turret::new(Vector2::new(200.0, 150.0));
     let t2 = Turret::new(Vector2::new(400.0, 150.0));
     man.add(Entity::Turret(t1));
@@ -247,35 +166,9 @@ pub fn game_init() -> State {
     let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(&path_points);
 
-    // let mut state = State {
-    //     all_loaded: false.into(),
-    //     curr_time: webhacks::get_time() as f32,
-    //     prev_time: 0.0,
-    //     frame_count: 99,
-    //     slime_pos: Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0 + 50.0),
-    //     mouse_pos: Vector2::new(0.0, 0.0),
-    //     mouse_btn: false.into(),
-    //     mouse_btn_pressed: false.into(),
-    //     music: music,
-    //     font: font,
-    //     image: image,
-    //     texture: webhacks::null_texture(),
-    //     anim_blobs_n: 0,
-    //     anim_blobs_arr: std::ptr::null(),
-    //     path_n: path_n,
-    //     path_arr: path_arr,
-    //     path_length: path_length,
-    //     // enemies_n: 0,
-    //     // enemies_arr: std::ptr::null_mut(),
-    //     mute: true.into(),
-    //     // turrets_n: turrets_n,
-    //     // turrets_arr: turrets_arr,
-    //     life: 20,
-    //     man: Rc::new(RefCell::new(EntityManager::new(
-    // };
-    let man = RefCell::new(EntityManager::new());
+    let mut man = EntityManager::new();
 
-    make_initial_turrets(&man);
+    make_initial_turrets(&mut man);
 
     State {
         all_loaded: false.into(),
@@ -345,16 +238,14 @@ pub type GameLoad = fn(state: *mut State);
 
 #[no_mangle]
 pub fn game_load(_state: *mut State) {
-    let state = RefCell::new(unsafe { std::ptr::read(_state) });
+    let mut state = unsafe { std::ptr::read(_state) };
 
     {
-        let mut state = state.borrow_mut();
         state.prev_time = state.curr_time;
         state.curr_time = webhacks::get_time() as f32;
     }
 
     {
-        let state = state.borrow_mut();
         if state.all_loaded.into() {
             return;
         }
@@ -364,7 +255,6 @@ pub fn game_load(_state: *mut State) {
 
     // check if the music is loaded
     {
-        let mut state = state.borrow_mut();
         if !webhacks::is_music_loaded(state.music) {
             any_not_loaded = true;
         }
@@ -392,7 +282,6 @@ pub fn game_load(_state: *mut State) {
     }
 
     {
-        let mut state = state.borrow_mut();
         if !any_not_loaded {
             state.all_loaded = true.into();
 
@@ -423,7 +312,7 @@ pub fn game_load(_state: *mut State) {
 
     // wrtie back the state
     unsafe {
-        std::ptr::write(_state, state.into_inner());
+        std::ptr::write(_state, state);
     }
 }
 
@@ -554,18 +443,40 @@ fn draw_slime_at_pos(
     // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
-fn update_entities(state: &State) -> u32 {
-    let mut life_lost: u32;
+struct HandleEntitiesUpdate {
+    life_lost: u32,
+    new_enemies: Option<Vec<Enemy>>,
+    enemy_updates: Option<Vec<enemy::EnemyUpdate>>,
+    bullet_updates: Option<Vec<bullet::BulletUpdate>>,
+    turret_updates: Option<Vec<turret::TurretUpdate>>,
+    new_bullets: Option<Vec<bullet::Bullet>>,
+    new_turret: Option<Turret>,
+}
+
+impl HandleEntitiesUpdate {
+    fn new() -> HandleEntitiesUpdate {
+        HandleEntitiesUpdate {
+            life_lost: 0,
+            new_enemies: None,
+            enemy_updates: None,
+            bullet_updates: None,
+            turret_updates: None,
+            new_bullets: None,
+            new_turret: None,
+        }
+    }
+}
+
+fn handle_entities(state: &State) -> HandleEntitiesUpdate {
+    let mut update = HandleEntitiesUpdate::new();
 
     {
         // let mut man = state_to_man(state);
         let curr_time = state.curr_time;
 
-        let last_enemy = {
-            let man = state.man.borrow();
-            man.enemies.last().cloned()
-        };
+        let last_enemy = { state.man.enemies.last().cloned() };
 
+        let mut new_enemies = vec![];
         match last_enemy {
             Some(Enemy {
                 spawn_time: last_spawn_time,
@@ -574,33 +485,37 @@ fn update_entities(state: &State) -> u32 {
                 // let state = state.borrow();
                 // let mut man = state.man.borrow_mut();
                 // man.add(Enemy::new(curr_time).into());
-                state.man.borrow_mut().add(Enemy::new(curr_time).into());
+                new_enemies.push(Enemy::new(curr_time).into());
             }
             None => {
                 // no enemies
-                state.man.borrow_mut().add(Enemy::new(curr_time).into());
+                new_enemies.push(Enemy::new(curr_time).into());
             }
             _ => {}
         }
+        update.new_enemies = Some(new_enemies);
 
-        let updates = state
+        let enemy_updates = state
             .man
-            .borrow()
             .enemies
             .iter()
             .map(|enemy| enemy.update(state))
             .collect::<Vec<_>>();
 
         // Calculate the total damage done by the enemies
-        life_lost = updates.iter().map(|update| update.damage_done).sum::<u32>();
-        life_lost = std::cmp::min(life_lost, state.life);
+        update.life_lost = enemy_updates
+            .iter()
+            .map(|update| update.damage_done)
+            .sum::<u32>();
+        update.life_lost = std::cmp::min(update.life_lost, state.life);
 
         // Apply the updates
-        for (enemy, update) in
-            std::iter::Iterator::zip(state.man.borrow_mut().enemies.iter_mut(), updates.iter())
-        {
-            enemy.apply(update);
-        }
+        // for (enemy, update) in
+        //     std::iter::Iterator::zip(state.man.enemies.iter_mut(), enemy_updates.iter())
+        // {
+        //     enemy.apply(update);
+        // }
+        update.enemy_updates = Some(enemy_updates);
 
         // println!("life_lost: {}", life_lost);
 
@@ -610,73 +525,127 @@ fn update_entities(state: &State) -> u32 {
         // Get all the bullet updates
         let updates = state
             .man
-            .borrow()
             .bullets
             .iter()
             .map(|bullet| bullet.update(state))
             .collect::<Vec<_>>();
 
         // Apply all the updates
-        for (bullet, update) in
-            std::iter::Iterator::zip(state.man.borrow_mut().bullets.iter_mut(), updates.iter())
-        {
-            bullet.apply(update);
-        }
+        // for (bullet, update) in
+        //     std::iter::Iterator::zip(state.man.bullets.iter_mut(), updates.iter())
+        // {
+        //     bullet.apply(update);
+        // }
+        update.bullet_updates = Some(updates);
     }
     {
         // Get all the turret updates
-        let updates = state
-            .man
-            .borrow()
-            .turrets
-            .iter()
-            .map(|turret| turret.update(state))
-            .collect::<Vec<_>>();
-
-        // Check whether any turrets are dead
-        let any_dead = updates.iter().any(|update| update.dead.into());
-
-        // Apply all the updates
-        for (turret, update) in
-            std::iter::Iterator::zip(state.man.borrow_mut().turrets.iter_mut(), updates.iter())
-        {
-            turret.apply(update);
-        }
-
-        // Get all the new bullets
-        let new_bullets = updates
-            .iter()
-            .filter_map(|update| update.new_bullet.clone())
-            .collect::<Vec<_>>();
-
-        // Spawn new bullets
-        {
-            let mut man = state.man.borrow_mut();
-            for bullet in new_bullets {
-                man.add(bullet.into());
+        // let turret_updates = state
+        //     .man
+        //     .turrets
+        //     .iter()
+        //     .map(|turret| turret.update(state))
+        //     .collect::<Vec<_>>();
+        let mut turret_updates = vec![];
+        let mut new_bullets = vec![];
+        for turret in state.man.turrets.iter() {
+            let (update, bullet) = turret.update(state);
+            turret_updates.push(update);
+            if let Some(bullet) = bullet {
+                new_bullets.push(bullet);
             }
         }
 
+        // Check whether any turrets are dead
+        let any_dead = turret_updates.iter().any(|update| update.dead.into());
+
+        // Apply all the updates
+        // for (turret, update) in
+        //     std::iter::Iterator::zip(state.man.turrets.iter_mut(), updates.iter())
+        // {
+        //     turret.apply(update);
+        // }
+        update.turret_updates = Some(turret_updates);
+        update.new_bullets = Some(new_bullets);
+
+        // Get all the new bullets
+        // let new_bullets = turret_updates
+        //     .iter()
+        //     .filter_map(|update| update.new_bullet.clone())
+        //     .collect::<Vec<_>>();
+
+        // Spawn new bullets
+        // {
+        //     for bullet in new_bullets {
+        //         state.man.add(bullet.into());
+        //     }
+        // }
+        // update.new_bullets = Some(new_bullets);
+
         if !any_dead && { state.mouse_btn_pressed.into() } {
-            state
-                .man
-                .borrow_mut()
-                .add(Turret::new(state.mouse_pos).into());
+            update.new_turret = Some(Turret::new(state.mouse_pos).into());
         }
     }
 
     // filter dead entities
-    state.man.borrow_mut().filter_dead();
+    // state.man.filter_dead();
 
-    life_lost
+    update
+}
+
+// HandleEntitiesUpdate {
+//     life_lost: u32,
+//     new_enemies: Option<Vec<Enemy>>,
+//     enemy_updates: Option<Vec<enemy::EnemyUpdate>>,
+//     bullet_updates: Option<Vec<bullet::BulletUpdate>>,
+//     turret_updates: Option<Vec<turret::TurretUpdate>>,
+//     // new_bullets: Option<Vec<bullet::Bullet>>,
+//     new_turret: Option<Turret>,
+// }
+
+fn apply_entities_update(state: &mut State, update: HandleEntitiesUpdate) {
+    state.life -= update.life_lost;
+
+    if let Some(new_enemies) = update.new_enemies {
+        new_enemies
+            .into_iter()
+            .for_each(|enemy| state.man.add(enemy.into()));
+    };
+
+    if let Some(enemy_updates) = update.enemy_updates {
+        std::iter::Iterator::zip(state.man.enemies.iter_mut(), enemy_updates.iter())
+            .for_each(|(enemy, update)| enemy.apply(update));
+    };
+
+    if let Some(bullet_updates) = update.bullet_updates {
+        std::iter::Iterator::zip(state.man.bullets.iter_mut(), bullet_updates.iter())
+            .for_each(|(bullet, update)| bullet.apply(update));
+    };
+
+    if let Some(turret_updates) = update.turret_updates {
+        std::iter::Iterator::zip(state.man.turrets.iter_mut(), turret_updates.iter())
+            .for_each(|(turret, update)| turret.apply(update));
+    };
+
+    // Spawn new bullets
+    if let Some(new_bullets) = update.new_bullets {
+        new_bullets
+            .into_iter()
+            .for_each(|bullet| state.man.add(bullet.into()));
+    }
+
+    // Spawn new turret
+    if let Some(new_turret) = update.new_turret {
+        state.man.add(new_turret.into());
+    }
+
+    state.man.filter_dead();
 }
 
 fn draw_entities_background(state: &State) {
-    let man = state.man.borrow();
-
     // draw lines from enemies to turrets if they are within range
-    for enemy in man.enemies.iter() {
-        for turret in man.turrets.iter() {
+    for enemy in state.man.enemies.iter() {
+        for turret in state.man.turrets.iter() {
             let distance = enemy
                 .screen_position(state.get_path())
                 .dist(&turret.position);
@@ -688,7 +657,7 @@ fn draw_entities_background(state: &State) {
     }
 
     // draw line to mouse if it's within range
-    for enemy in man.enemies.iter() {
+    for enemy in state.man.enemies.iter() {
         let distance = enemy
             .screen_position(state.get_path())
             .dist(&state.mouse_pos);
@@ -698,28 +667,26 @@ fn draw_entities_background(state: &State) {
         }
     }
 
-    for (i, enemy) in man.enemies.iter().enumerate() {
+    for (i, enemy) in state.man.enemies.iter().enumerate() {
         enemy.draw_background(i, state);
     }
-    for (i, turret) in man.turrets.iter().enumerate() {
+    for (i, turret) in state.man.turrets.iter().enumerate() {
         turret.draw_background(i, state);
     }
 
-    for (i, bullet) in man.bullets.iter().enumerate() {
+    for (i, bullet) in state.man.bullets.iter().enumerate() {
         bullet.draw_background(i, state);
     }
 }
 
 fn draw_entities_foreground(state: &State) {
-    let man = state.man.borrow();
-
-    for (i, enemy) in man.enemies.iter().enumerate() {
+    for (i, enemy) in state.man.enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
     }
-    for (i, turret) in man.turrets.iter().enumerate() {
+    for (i, turret) in state.man.turrets.iter().enumerate() {
         turret.draw_foreground(i, state);
     }
-    for (i, bullet) in man.bullets.iter().enumerate() {
+    for (i, bullet) in state.man.bullets.iter().enumerate() {
         bullet.draw_foreground(i, state);
     }
 }
@@ -806,8 +773,8 @@ pub fn game_frame(state_ptr: *mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    let life_lost = update_entities(&state);
-    state.life -= life_lost;
+    let update = handle_entities(&state);
+    apply_entities_update(&mut state, update);
 
     let game_over = state.life == 0;
 

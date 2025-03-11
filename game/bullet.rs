@@ -9,7 +9,6 @@ use crate::turret::Turret;
 use crate::u32_bool::Bool;
 use crate::webhacks;
 use crate::State;
-use std::cell::RefCell;
 
 use crate::ACTIVE_RADIUS;
 use crate::ALPHA_BEIGE;
