@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
 use crate::u32_bool::Bool;
@@ -77,17 +79,18 @@ impl Enemy {
         }
     }
 
-    pub fn update(&mut self, state: &State) {
-        self.position += SPEED_ENEMY * state.dt();
+    pub fn update(&mut self, state: &RefCell<State>) {
+        self.position += SPEED_ENEMY * state.borrow().dt();
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &State) {
+    pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
         // let path = state.get_path();
         // let pos = self.screen_position(path);
         // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, state: &State) {
+    pub fn draw_foreground(&self, _index: usize, state: &RefCell<State>) {
+        let state = state.borrow();
         let path = state.get_path();
         let pos = self.screen_position(path);
         // let distances = state.get_distances();

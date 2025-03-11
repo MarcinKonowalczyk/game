@@ -18,7 +18,6 @@ mod u32_bool;
 mod vec2;
 mod webhacks;
 
-use crate::array2d::Array2D;
 use crate::enemy::Enemy;
 use crate::turret::Turret;
 use crate::vec2::Vector2;
@@ -52,7 +51,7 @@ const ALPHA_BLACK: Color = Color {
 };
 
 #[repr(C, align(4))]
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct State {
     pub all_loaded: Bool,
     pub curr_time: f32,
@@ -73,10 +72,28 @@ pub struct State {
     pub path_length: f32,
     pub mute: Bool,
     pub life: u32,
-    pub distances: *mut Array2D,
-    pub man_state_n: u32,
-    pub man_state_arr: *mut u32,
+    // pub man_state_n: u32,
+    // pub man_state_arr: *mut u32,
+    pub man: RefCell<EntityManager>,
 }
+
+// fn state_to_man(state: std::rc::Rc<RefCell<State>>) -> EntityManager {
+//     let man_state_n = { state.borrow().man_state_n };
+//     let man: EntityManager = match man_state_n {
+//         0 => panic!("State has no EntityManager"),
+//         _ => {
+//             let state_rc = Rc::downgrade(&state);
+//             let man = EntityManager::from_state(
+//                 unsafe {
+//                     std::slice::from_raw_parts(self.man_state_arr, self.man_state_n as usize)
+//                 },
+//                 state_rc,
+//             );
+//             man
+//         }
+//     };
+//     man
+// }
 
 impl State {
     fn get_path(&self) -> &[Vector2] {
@@ -87,28 +104,68 @@ impl State {
         }
     }
 
-    fn man(self: &State) -> EntityManager {
-        let man: EntityManager = match self.man_state_n {
-            0 => EntityManager::new(),
-            _ => EntityManager::from_state(unsafe {
-                std::slice::from_raw_parts(self.man_state_arr, self.man_state_n as usize)
-            }),
-        };
-        man
-    }
-
-    fn save_man(&mut self, man: EntityManager) {
-        let man_state = man.to_state();
-        let mut man_state = std::mem::ManuallyDrop::new(man_state);
-        self.man_state_n = man_state.len() as u32;
-        self.man_state_arr = man_state.as_mut_ptr();
-    }
+    // fn save_man(&mut self, man: EntityManager) {
+    //     let man_state = man.to_state();
+    //     let mut man_state = std::mem::ManuallyDrop::new(man_state);
+    //     self.man_state_n = man_state.len() as u32;
+    //     self.man_state_arr = man_state.as_mut_ptr();
+    // }
 
     fn dt(&self) -> f32 {
         self.curr_time - self.prev_time
     }
 }
 
+// pub type StateRef<'a> = std::rc::Rc<RefCell<State<'a>>>;
+// pub type StateWeakRef<'a> = std::rc::Weak<RefCell<State<'a>>>;
+
+// trait StateCellExt {
+//     fn man(&self) -> EntityManager;
+// }
+
+// impl StateCellExt for RefCell<&mut State> {
+//     fn man(&self) -> EntityManager {
+//         let man_state_n = { self.borrow().man_state_n };
+//         let man_state_arr = { self.borrow().man_state_arr };
+//         let man: EntityManager = match man_state_n {
+//             0 => EntityManager::new(self),
+//             _ => EntityManager::from_state(
+//                 unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
+//                 self,
+//             ),
+//         };
+//         man
+//     }
+// }
+
+// impl<'a> StateRefExt<'a> for StateRef<'a> {
+//     fn man<'b: 'a>(self: &'b StateRef<'a>) -> EntityManager<'b> {
+//         let man_state_n = { self.borrow().man_state_n };
+//         let man_state_arr = { self.borrow().man_state_arr };
+//         let man: EntityManager = match man_state_n {
+//             0 => EntityManager::new(self.clone()),
+//             _ => EntityManager::from_state(
+//                 unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
+//                 self.clone(),
+//             ),
+//         };
+//         man
+//     }
+// }
+
+// fn state_to_man(state: StateRef) -> RefCell<EntityManager> {
+//     let man_state_n = { state.borrow().man_state_n };
+//     let man_state_arr = { state.borrow().man_state_arr };
+//     let state_ref = Rc::downgrade(&state);
+//     let man: EntityManager = match man_state_n {
+//         0 => EntityManager::new(state_ref),
+//         _ => EntityManager::from_state(
+//             unsafe { std::slice::from_raw_parts(man_state_arr, man_state_n as usize) },
+//             state_ref,
+//         ),
+//     };
+//     man
+// }
 // statically check that the State struct is the same size as the C struct
 // this is important because we're going to be passing this struct back and forth between Rust and C
 
@@ -147,7 +204,8 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
     (path_points, path_length)
 }
 
-fn make_initial_turrets<'frame>(man: &mut EntityManager) {
+fn make_initial_turrets(man: &RefCell<EntityManager>) {
+    let mut man = man.borrow_mut();
     let t1 = Turret::new(Vector2::new(200.0, 150.0));
     let t2 = Turret::new(Vector2::new(400.0, 150.0));
     man.add(Entity::Turret(t1));
@@ -188,20 +246,35 @@ pub fn game_init() -> State {
     let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(&path_points);
 
-    let mut man = EntityManager::new();
+    // let mut state = State {
+    //     all_loaded: false.into(),
+    //     curr_time: webhacks::get_time() as f32,
+    //     prev_time: 0.0,
+    //     frame_count: 99,
+    //     slime_pos: Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0 + 50.0),
+    //     mouse_pos: Vector2::new(0.0, 0.0),
+    //     mouse_btn: false.into(),
+    //     mouse_btn_pressed: false.into(),
+    //     music: music,
+    //     font: font,
+    //     image: image,
+    //     texture: webhacks::null_texture(),
+    //     anim_blobs_n: 0,
+    //     anim_blobs_arr: std::ptr::null(),
+    //     path_n: path_n,
+    //     path_arr: path_arr,
+    //     path_length: path_length,
+    //     // enemies_n: 0,
+    //     // enemies_arr: std::ptr::null_mut(),
+    //     mute: true.into(),
+    //     // turrets_n: turrets_n,
+    //     // turrets_arr: turrets_arr,
+    //     life: 20,
+    //     man: Rc::new(RefCell::new(EntityManager::new(
+    // };
+    let man = RefCell::new(EntityManager::new());
 
-    make_initial_turrets(&mut man);
-    // let (turrets_n, turrets_arr) = clone_to_malloced(&turrets);
-
-    let distances = Array2D::new(0, 0);
-
-    // move to static memory
-    let distances_ptr = Box::into_raw(Box::new(distances));
-
-    let man_state = man.to_state();
-    let mut man_state = std::mem::ManuallyDrop::new(man_state);
-    let man_state_n = man_state.len() as u32;
-    let man_state_arr = man_state.as_mut_ptr();
+    make_initial_turrets(&man);
 
     State {
         all_loaded: false.into(),
@@ -221,17 +294,20 @@ pub fn game_init() -> State {
         path_n: path_n,
         path_arr: path_arr,
         path_length: path_length,
-        // enemies_n: 0,
-        // enemies_arr: std::ptr::null_mut(),
         mute: true.into(),
-        // turrets_n: turrets_n,
-        // turrets_arr: turrets_arr,
-        distances: distances_ptr,
         life: 20,
-        man_state_n: man_state_n,
-        man_state_arr: man_state_arr,
+        man: man,
     }
 }
+
+// // deref state at the end of the frame
+// fn deref_state(state: StateRef) -> State {
+//     match Rc::try_unwrap(state) {
+//         Ok(state) => state,
+//         Err(_) => panic!("state is still referenced"),
+//     }
+//     .into_inner()
+// }
 
 fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
     let n = arr.len().try_into().unwrap();
@@ -264,69 +340,89 @@ fn free_malloced<T>(len: u32, ptr: *mut T) {
     unsafe { std::alloc::dealloc(_ptr, layout) }
 }
 
-pub type GameLoad = fn(state: &mut State);
+pub type GameLoad = fn(state: *mut State);
 
 #[no_mangle]
-pub fn game_load(state: &mut State) {
-    state.prev_time = state.curr_time;
-    state.curr_time = webhacks::get_time() as f32;
+pub fn game_load(_state: *mut State) {
+    let state = RefCell::new(unsafe { std::ptr::read(_state) });
 
-    if state.all_loaded.into() {
-        return;
+    {
+        let mut state = state.borrow_mut();
+        state.prev_time = state.curr_time;
+        state.curr_time = webhacks::get_time() as f32;
+    }
+
+    {
+        let state = state.borrow_mut();
+        if state.all_loaded.into() {
+            return;
+        }
     }
 
     let mut any_not_loaded = false;
 
     // check if the music is loaded
-    if !webhacks::is_music_loaded(state.music) {
-        any_not_loaded = true;
-    }
-
-    // check if the font is loaded
-    if !webhacks::is_font_loaded(state.font) {
-        any_not_loaded = true;
-    }
-
-    // check if the image is loaded
-    if !webhacks::is_image_loaded(state.image) {
-        any_not_loaded = true;
-    } else {
-        // image is loaded! let's load the texture
-        // state.texture = webhacks::load_texture_from_image(state.image);
-
-        if !webhacks::is_texture_loaded(state.texture) {
-            state.texture = webhacks::load_texture_from_image(state.image);
-        }
-
-        if !webhacks::is_texture_loaded(state.texture) {
+    {
+        let mut state = state.borrow_mut();
+        if !webhacks::is_music_loaded(state.music) {
             any_not_loaded = true;
         }
-    }
 
-    if !any_not_loaded {
-        state.all_loaded = true.into();
-
-        // Once we've determined that init/load is done, we can unload some resources
-
-        let blobs = anim::find_blobs(state.image);
-        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
-
-        state.anim_blobs_arr = anim_blobs_arr;
-        state.anim_blobs_n = anim_blobs_n;
-
-        webhacks::unload_image(state.image); // we don't need the image anymore
-
-        if state.mute.into() {
-            webhacks::set_music_volume(state.music, 0.0);
-        } else {
-            webhacks::set_music_volume(state.music, 1.0);
+        // check if the font is loaded
+        if !webhacks::is_font_loaded(state.font) {
+            any_not_loaded = true;
         }
 
-        let texture_shape = webhacks::get_texture_shape(state.texture);
-        webhacks::log(
-            -1,
-            format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
-        );
+        // check if the image is loaded
+        if !webhacks::is_image_loaded(state.image) {
+            any_not_loaded = true;
+        } else {
+            // image is loaded! let's load the texture
+            // state.texture = webhacks::load_texture_from_image(state.image);
+
+            if !webhacks::is_texture_loaded(state.texture) {
+                state.texture = webhacks::load_texture_from_image(state.image);
+            }
+
+            if !webhacks::is_texture_loaded(state.texture) {
+                any_not_loaded = true;
+            }
+        }
+    }
+
+    {
+        let mut state = state.borrow_mut();
+        if !any_not_loaded {
+            state.all_loaded = true.into();
+
+            // Once we've determined that init/load is done, we can unload some resources
+
+            let blobs = anim::find_blobs(state.image);
+            let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
+
+            state.anim_blobs_arr = anim_blobs_arr;
+            state.anim_blobs_n = anim_blobs_n;
+
+            webhacks::unload_image(state.image); // we don't need the image anymore
+
+            if state.mute.into() {
+                webhacks::set_music_volume(state.music, 0.0);
+            } else {
+                webhacks::set_music_volume(state.music, 1.0);
+            }
+
+            let texture_shape = webhacks::get_texture_shape(state.texture);
+            webhacks::log(
+                -1,
+                format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
+            );
+        }
+    }
+    println!("end of game_load");
+
+    // wrtie back the state
+    unsafe {
+        std::ptr::write(_state, state.into_inner());
     }
 }
 
@@ -335,7 +431,7 @@ fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> u32 {
     frame
 }
 
-fn handle_keys(state: &mut State) {
+fn handle_keys(state: &RefCell<State>) {
     let speed = unsafe {
         if raylib::IsKeyDown(KEY::Space) {
             SPEED_BOOSTED
@@ -353,33 +449,38 @@ fn handle_keys(state: &mut State) {
         a = raylib::IsKeyDown(KEY::A);
         d = raylib::IsKeyDown(KEY::D);
     }
+    {
+        let mut state = state.borrow_mut();
+        state.slime_pos.y -= dt * speed * (w as i32 as f32);
+        state.slime_pos.y += dt * speed * (s as i32 as f32);
+        state.slime_pos.x -= dt * speed * (a as i32 as f32);
+        state.slime_pos.x += dt * speed * (d as i32 as f32);
 
-    state.slime_pos.y -= dt * speed * (w as i32 as f32);
-    state.slime_pos.y += dt * speed * (s as i32 as f32);
-    state.slime_pos.x -= dt * speed * (a as i32 as f32);
-    state.slime_pos.x += dt * speed * (d as i32 as f32);
+        // prevent the rect from wandering off the screen too far
+        if state.slime_pos.x < -100.0 {
+            state.slime_pos.x = -100.0;
+        } else if state.slime_pos.x > WINDOW_WIDTH as f32 {
+            state.slime_pos.x = WINDOW_WIDTH as f32;
+        }
 
-    // prevent the rect from wandering off the screen too far
-    if state.slime_pos.x < -100.0 {
-        state.slime_pos.x = -100.0;
-    } else if state.slime_pos.x > WINDOW_WIDTH as f32 {
-        state.slime_pos.x = WINDOW_WIDTH as f32;
+        if state.slime_pos.y < -100.0 {
+            state.slime_pos.y = -100.0;
+        } else if state.slime_pos.y > WINDOW_HEIGHT as f32 {
+            state.slime_pos.y = WINDOW_HEIGHT as f32;
+        }
     }
 
-    if state.slime_pos.y < -100.0 {
-        state.slime_pos.y = -100.0;
-    } else if state.slime_pos.y > WINDOW_HEIGHT as f32 {
-        state.slime_pos.y = WINDOW_HEIGHT as f32;
-    }
-
-    // if raylib::IsKeyPressed(KEY::M) {
-    if webhacks::is_key_pressed(KEY::M) {
-        state.mute = !state.mute;
-        webhacks::set_music_volume(state.music, if state.mute.into() { 0.0 } else { 1.0 });
+    {
+        let mut state = state.borrow_mut();
+        // if raylib::IsKeyPressed(KEY::M) {
+        if webhacks::is_key_pressed(KEY::M) {
+            state.mute = !state.mute;
+            webhacks::set_music_volume(state.music, if state.mute.into() { 0.0 } else { 1.0 });
+        }
     }
 }
 
-fn handle_mouse(state: &mut State) {
+fn handle_mouse(state: &RefCell<State>) {
     let mut mouse_pos = webhacks::get_mouse_position();
     let is_outside = mouse_pos.x < 0.0
         || mouse_pos.y < 0.0
@@ -388,6 +489,7 @@ fn handle_mouse(state: &mut State) {
     if is_outside {
         mouse_pos = Vector2::new(-1.0, -1.0);
     }
+    let mut state = state.borrow_mut();
     state.mouse_pos = mouse_pos;
     state.mouse_btn = Bool {
         value: webhacks::is_mouse_button_down(MouseButton::Left as i32) as u32,
@@ -423,36 +525,48 @@ fn draw_slime_at_pos(
     // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
 
-fn update_entities(state: &mut State) {
-    // let mut man = state.man();
-    // let mut man = state.man();
-
+fn update_entities(state: &RefCell<State>) {
     {
-        let mut man = state.man();
+        // let mut man = state_to_man(state);
+        let curr_time = { state.borrow().curr_time };
 
-        let last_enemy = { man.enemies().unwrap_or_default().last() };
+        let last_enemy = {
+            let state = state.borrow();
+            let man = state.man.borrow();
+            man.enemies.last().cloned()
+        };
 
         match last_enemy {
             Some(Enemy {
                 spawn_time: last_spawn_time,
                 ..
-            }) if state.curr_time - *last_spawn_time > SPAWN_INTERVAL => {
-                man.add(Enemy::new(state.curr_time).into());
+            }) if curr_time - last_spawn_time > SPAWN_INTERVAL => {
+                // let state = state.borrow();
+                // let mut man = state.man.borrow_mut();
+                // man.add(Enemy::new(curr_time).into());
+                state
+                    .borrow()
+                    .man
+                    .borrow_mut()
+                    .add(Enemy::new(curr_time).into());
             }
             None => {
                 // no enemies
-                man.add(Enemy::new(state.curr_time).into());
+                state
+                    .borrow()
+                    .man
+                    .borrow_mut()
+                    .add(Enemy::new(curr_time).into());
             }
             _ => {}
         }
 
-        let enemies = man.enemies_mut().unwrap_or_default();
-
+        let path_length = { state.borrow().path_length };
         let mut life_lost = 0;
-        for enemy in enemies.iter_mut() {
+        for enemy in state.borrow().man.borrow_mut().enemies.iter_mut() {
             enemy.update(state);
 
-            if enemy.position >= state.path_length {
+            if enemy.position >= path_length {
                 enemy.dead = true.into();
                 life_lost += 1;
             };
@@ -463,36 +577,67 @@ fn update_entities(state: &mut State) {
         }
 
         // println!("life_lost: {}", life_lost);
-        state.life -= std::cmp::min(life_lost, state.life);
+        {
+            let mut state = state.borrow_mut();
+            state.life -= std::cmp::min(life_lost, state.life);
+        }
 
-        let bullets = man.bullets_mut().unwrap_or_default();
-
-        for bullet in bullets.iter_mut() {
+        for bullet in state.borrow().man.borrow_mut().bullets.iter_mut() {
             bullet.update(state);
         }
 
-        state.save_man(man);
+        // state.save_man(man);
     }
 
     {
-        let mut any_dead = false;
-        for turret in state.man().turrets_mut().unwrap_or_default().iter_mut() {
-            turret.update(state);
-            any_dead = any_dead || turret.dead.into();
+        // Get all the turret updates
+        let updates = state
+            .borrow()
+            .man
+            .borrow()
+            .turrets
+            .iter()
+            .map(|turret| turret.update(state))
+            .collect::<Vec<_>>();
+
+        // Check whether any turrets are dead
+        let any_dead = updates.iter().any(|update| update.dead.into());
+
+        // Apply all the updates
+        for (turret, update) in std::iter::Iterator::zip(
+            state.borrow().man.borrow_mut().turrets.iter_mut(),
+            updates.iter(),
+        ) {
+            turret.apply(update);
         }
 
-        if !any_dead && state.mouse_btn_pressed.into() {
-            state.man().add(Turret::new(state.mouse_pos).into());
+        // Get all the new bullets
+        let new_bullets = updates
+            .iter()
+            .filter_map(|update| update.new_bullet.clone())
+            .collect::<Vec<_>>();
+
+        // Spawn new bullets
+        {
+            let state = state.borrow();
+            let mut man = state.man.borrow_mut();
+            for bullet in new_bullets {
+                man.add(bullet.into());
+            }
+        }
+
+        if !any_dead && { state.borrow().mouse_btn_pressed.into() } {
+            state
+                .borrow()
+                .man
+                .borrow_mut()
+                .add(Turret::new(state.borrow().mouse_pos).into());
         }
         // state.save_man(man);
     }
 
     // filter dead entities
-    {
-        let mut man = state.man();
-        man.filter_dead();
-        state.save_man(man);
-    }
+    state.borrow().man.borrow_mut().filter_dead();
 
     // let mut sorted_ids = man.ids.iter().copied().collect::<Vec<_>>();
     // sorted_ids.sort();
@@ -507,66 +652,65 @@ fn update_entities(state: &mut State) {
     // state.save_man(man);
 }
 
-fn draw_entities_background(state: &State) {
-    let enemies = state.man().enemies().unwrap_or_default().to_vec();
-    let turrets = state.man().turrets().unwrap_or_default().to_vec();
-    let bullets = state.man().bullets().unwrap_or_default().to_vec();
+fn draw_entities_background(state: &RefCell<State>) {
+    let state_rc = state.borrow();
+    let man = state_rc.man.borrow();
 
     // draw lines from enemies to turrets if they are within range
-    for enemy in enemies.iter() {
-        for turret in turrets.iter() {
+    for enemy in man.enemies.iter() {
+        for turret in man.turrets.iter() {
             let distance = enemy
-                .screen_position(state.get_path())
+                .screen_position(state_rc.get_path())
                 .dist(&turret.position);
             if distance < ACTIVE_RADIUS {
-                let enemy_pos = enemy.screen_position(state.get_path());
+                let enemy_pos = enemy.screen_position(state_rc.get_path());
                 webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
             }
         }
     }
 
     // draw line to mouse if it's within range
-    for enemy in enemies.iter() {
+    for enemy in man.enemies.iter() {
         let distance = enemy
-            .screen_position(state.get_path())
-            .dist(&state.mouse_pos);
+            .screen_position(state_rc.get_path())
+            .dist(&state_rc.mouse_pos);
         if distance < ACTIVE_RADIUS {
-            let enemy_pos = enemy.screen_position(state.get_path());
-            webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
+            let enemy_pos = enemy.screen_position(state_rc.get_path());
+            webhacks::draw_line_ex(enemy_pos, state_rc.mouse_pos, 2.0, RAYWHITE);
         }
     }
 
-    for (i, enemy) in enemies.iter().enumerate() {
+    for (i, enemy) in man.enemies.iter().enumerate() {
         enemy.draw_background(i, state);
     }
-    for (i, turret) in turrets.iter().enumerate() {
+    for (i, turret) in man.turrets.iter().enumerate() {
         turret.draw_background(i, state);
     }
 
-    for (i, bullet) in bullets.iter().enumerate() {
+    for (i, bullet) in man.bullets.iter().enumerate() {
         bullet.draw_background(i, state);
     }
 }
 
-fn draw_entities_foreground(state: &State) {
-    // let man = state.man();
-    let man = state.man();
-    let enemies = man.enemies().unwrap_or_default();
-    let turrets = man.turrets().unwrap_or_default();
-    let bullets = man.bullets().unwrap_or_default();
+fn draw_entities_foreground(state: &RefCell<State>) {
+    let state_rc = state.borrow();
+    let man = state_rc.man.borrow();
+    // let enemies = man.enemies;
+    // let turrets = man.turrets;
+    // let bullets = man.bullets;
 
-    for (i, enemy) in enemies.iter().enumerate() {
+    for (i, enemy) in man.enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
     }
-    for (i, turret) in turrets.iter().enumerate() {
+    for (i, turret) in man.turrets.iter().enumerate() {
         turret.draw_foreground(i, state);
     }
-    for (i, bullet) in bullets.iter().enumerate() {
+    for (i, bullet) in man.bullets.iter().enumerate() {
         bullet.draw_foreground(i, state);
     }
 }
 
-fn draw_mouse(_state: &State) {
+fn draw_mouse(_state: &RefCell<State>) {
     // let color = if state.mouse_btn.into() {
     //     RED
     // } else {
@@ -576,7 +720,8 @@ fn draw_mouse(_state: &State) {
     // webhacks::draw_circle(state.mouse_pos, 2.0, color);
 }
 
-fn draw_path(state: &State) {
+fn draw_path(state: &RefCell<State>) {
+    let state = state.borrow();
     // Draw the path
     let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
     for i in 1..path.len() {
@@ -587,7 +732,8 @@ fn draw_path(state: &State) {
     }
 }
 
-fn draw_text(state: &State) {
+fn draw_text(state: &RefCell<State>) {
+    let state = state.borrow();
     let slime_pos_text = format! {
         "slime: [{x}, {y}]",
         x = state.slime_pos.x.round(),
@@ -640,20 +786,24 @@ fn draw_text(state: &State) {
     webhacks::draw_text(state.font, &life_text, *pos, font_size, 2.0, RAYWHITE);
 }
 
-pub type GameFrame = fn(state: &mut State);
+pub type GameFrame = fn(state: *mut State);
 
 #[no_mangle]
-pub fn game_frame(state: &mut State) {
-    state.prev_time = state.curr_time;
-    state.curr_time = webhacks::get_time() as f32;
+pub fn game_frame(_state: *mut State) {
+    let state = RefCell::new(unsafe { std::ptr::read(_state) });
+    {
+        let mut state = state.borrow_mut();
+        state.prev_time = state.curr_time;
+        state.curr_time = webhacks::get_time() as f32;
+    }
 
-    update_entities(state);
+    update_entities(&state);
 
-    let game_over = state.life == 0;
+    let game_over = { state.borrow().life == 0 };
 
     if !game_over {
-        handle_keys(state);
-        handle_mouse(state);
+        handle_keys(&state);
+        handle_mouse(&state);
     }
 
     unsafe { raylib::BeginDrawing() };
@@ -661,23 +811,27 @@ pub fn game_frame(state: &mut State) {
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        let anim_blobs = unsafe {
-            std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
-        };
-        draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
+        {
+            let state = state.borrow();
+            let anim_blobs = unsafe {
+                std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
+            };
+            draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
+        }
 
-        draw_text(state);
-        draw_entities_background(state);
-        draw_path(state);
-        draw_entities_foreground(state);
+        draw_text(&state);
+        draw_entities_background(&state);
+        draw_path(&state);
+        draw_entities_foreground(&state);
 
-        draw_mouse(state);
+        draw_mouse(&state);
 
         if game_over {
             // draw a shaded rectangle over the screen
             unsafe {
                 raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
             }
+            let state = state.borrow();
 
             // draw the game over text
             let text = "Game Over!";
@@ -702,11 +856,19 @@ pub fn game_frame(state: &mut State) {
 
     unsafe { raylib::EndDrawing() };
 
-    // Update the music stream
-    webhacks::update_music_stream(state.music);
+    {
+        // Update the music stream
+        let mut state = state.borrow_mut();
+        webhacks::update_music_stream(state.music);
 
-    // Update the frame count
-    state.frame_count += 1;
+        // Update the frame count
+        state.frame_count += 1;
+    }
+
+    // Write back the state
+    unsafe {
+        std::ptr::write(_state, state.into_inner());
+    }
 }
 
 #[no_mangle]

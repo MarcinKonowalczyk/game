@@ -7,6 +7,8 @@ use crate::vec2::Vector2;
 use crate::entity_manager::{EntityId, HasId};
 use crate::webhacks;
 use crate::State;
+use std::cell::RefCell;
+use std::str;
 
 use crate::u32_bool::Bool;
 
@@ -34,6 +36,26 @@ fn min_f32(a: f32, b: f32) -> f32 {
     }
 }
 
+pub struct TurretUpdate {
+    pub id: EntityId, // to match up with the turret
+    pub dead: bool,
+    pub fire_cooldown: f32,
+    pub hover: bool,
+    pub new_bullet: Option<Bullet>,
+}
+
+impl From<&Turret> for TurretUpdate {
+    fn from(turret: &Turret) -> Self {
+        TurretUpdate {
+            id: turret.id,
+            dead: turret.dead.into(),
+            fire_cooldown: turret.fire_cooldown,
+            hover: turret.hover.into(),
+            new_bullet: None,
+        }
+    }
+}
+
 impl Turret {
     pub fn new(position: Vector2) -> Turret {
         Turret {
@@ -45,43 +67,52 @@ impl Turret {
         }
     }
 
-    pub fn update(&mut self, state: &mut State) {
-        let mouse_distance = self.position.dist(&state.mouse_pos);
+    pub fn update(&self, state: &RefCell<State>) -> TurretUpdate {
+        let mouse_pos = { state.borrow().mouse_pos };
+        let mouse_btn_pressed = { state.borrow().mouse_btn_pressed };
+        let dt = { state.borrow().dt() };
+        let mouse_distance = self.position.dist(&mouse_pos);
+
+        let mut update = TurretUpdate::from(self);
+
         if mouse_distance < TURRET_RADIUS {
-            self.hover = true.into();
+            update.hover = true;
         } else if mouse_distance < 1.5 * TURRET_RADIUS {
-            //
+            // no change
         } else {
-            self.hover = false.into();
+            update.hover = false;
         }
-        if self.hover.into() && state.mouse_btn_pressed.into() {
+
+        if update.hover && mouse_btn_pressed.into() {
             // despawn the turret
-            self.dead = true.into();
+            update.dead = true;
         }
 
-        self.fire_cooldown -= state.dt();
-        if self.fire_cooldown <= 0.0 {
-            self.fire_cooldown = FIRE_COOLDOWN;
-            self.fire(state);
+        update.fire_cooldown -= dt;
+        if update.fire_cooldown <= 0.0 {
+            update.fire_cooldown = FIRE_COOLDOWN;
+            self.fire(&mut update);
         }
+
+        update
     }
 
-    fn fire(&self, state: &mut State) {
-        // let target = state.get_closest_enemy(self.position);
-        // if let Some(target) = target {
-        // let bullet = Bullet::new(self.position, self, target);
-        // state.add_entity(Box::new(bullet));
-        // }
-        let mut man = state.man();
-        man.add(Bullet::new(self.position, Some(self), None).into());
-        state.save_man(man);
+    pub fn apply(&mut self, update: &TurretUpdate) {
+        self.dead = update.dead.into();
+        self.fire_cooldown = update.fire_cooldown;
+        self.hover = update.hover.into();
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &State) {
+    fn fire(&self, update: &mut TurretUpdate) {
+        let new_bullet = Bullet::new(self.position, Some(self), None);
+        update.new_bullet = Some(new_bullet);
+    }
+
+    pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
         webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, _state: &State) {
+    pub fn draw_foreground(&self, _index: usize, _state: &RefCell<State>) {
         let radius = if self.hover.into() {
             TURRET_RADIUS * 1.5
         } else {

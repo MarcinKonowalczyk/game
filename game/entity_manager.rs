@@ -2,7 +2,7 @@ pub type EntityId = u32;
 
 pub const NO_ID: EntityId = 0;
 
-use crate::bullet::{self, Bullet};
+use crate::bullet::Bullet;
 use crate::enemy::Enemy;
 use crate::turret::Turret;
 use crate::webhacks;
@@ -10,15 +10,17 @@ use std::collections::HashSet;
 
 // #[derive(Clone, Debug)]
 pub struct EntityManager {
-    // turrets: Vec<Turret>,
-    // enemies: Vec<Enemy>,
-    turrets_n: u32,
-    turrets_arr: *mut Turret,
-    enemies_n: u32,
-    enemies_arr: *mut Enemy,
-    bullets_n: u32,
-    bullets_arr: *mut Bullet,
+    pub turrets: Vec<Turret>,
+    pub enemies: Vec<Enemy>,
+    pub bullets: Vec<Bullet>,
+    // turrets_n: u32,
+    // turrets_arr: *mut Turret,
+    // enemies_n: u32,
+    // enemies_arr: *mut Enemy,
+    // bullets_n: u32,
+    // bullets_arr: *mut Bullet,
     pub ids: HashSet<EntityId>,
+    // pub state_ref: StateWeakRef<'a>,
 }
 
 use std::fmt::Display;
@@ -26,12 +28,9 @@ use std::fmt::Display;
 impl Display for EntityManager {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("EntityManager")
-            .field("turrets_n", &self.turrets_n)
-            .field("turrets_arr", &self.turrets_arr)
-            .field("enemies_n", &self.enemies_n)
-            .field("enemies_arr", &self.enemies_arr)
-            .field("bullets_n", &self.bullets_n)
-            .field("bullets_arr", &self.bullets_arr)
+            .field("turrets", &self.turrets)
+            .field("enemies", &self.enemies)
+            .field("bullets", &self.bullets)
             .finish()
     }
 }
@@ -154,12 +153,15 @@ impl<'a> From<&'a Enemy> for &'a Entity {
 impl EntityManager {
     pub fn new() -> EntityManager {
         EntityManager {
-            turrets_n: 0,
-            turrets_arr: std::ptr::null_mut(),
-            enemies_n: 0,
-            enemies_arr: std::ptr::null_mut(),
-            bullets_n: 0,
-            bullets_arr: std::ptr::null_mut(),
+            // turrets_n: 0,
+            // turrets_arr: std::ptr::null_mut(),
+            // enemies_n: 0,
+            // enemies_arr: std::ptr::null_mut(),
+            // bullets_n: 0,
+            // bullets_arr: std::ptr::null_mut(),
+            turrets: Vec::new(),
+            enemies: Vec::new(),
+            bullets: Vec::new(),
             ids: HashSet::new(),
         }
     }
@@ -167,36 +169,48 @@ impl EntityManager {
     pub fn to_state(self) -> Box<[u32]> {
         let mut state = Vec::new();
 
-        let ptr = self.turrets_arr;
-        let len = self.turrets_n;
+        // let ptr = self.turrets_arr;
+        // let len = self.turrets_n;
+        let ptr = self.turrets.as_ptr();
+        let len = self.turrets.len() as u32;
+        let cap = self.turrets.capacity() as u32;
         let size = std::mem::size_of::<Turret>();
         debug_assert!(size % 4 == 0);
 
         state.push(len);
+        state.push(cap);
         if len > 0 {
             state.extend_from_slice(unsafe {
                 std::slice::from_raw_parts(ptr as *const u32, len as usize * size / 4)
             });
         }
 
-        let ptr = self.enemies_arr;
-        let len = self.enemies_n;
+        // let ptr = self.enemies_arr;
+        // let len = self.enemies_n;
+        let ptr = self.enemies.as_ptr();
+        let len = self.enemies.len() as u32;
+        let cap = self.enemies.capacity() as u32;
         let size = std::mem::size_of::<Enemy>();
         debug_assert!(size % 4 == 0);
 
         state.push(len);
+        state.push(cap);
         if len > 0 {
             state.extend_from_slice(unsafe {
                 std::slice::from_raw_parts(ptr as *const u32, len as usize * size / 4)
             });
         }
 
-        let ptr = self.bullets_arr;
-        let len = self.bullets_n;
+        // let ptr = self.bullets_arr;
+        // let len = self.bullets_n;
+        let ptr = self.bullets.as_ptr();
+        let len = self.bullets.len() as u32;
+        let cap = self.bullets.capacity() as u32;
         let size = std::mem::size_of::<Bullet>();
         debug_assert!(size % 4 == 0);
 
         state.push(len);
+        state.push(cap);
         if len > 0 {
             state.extend_from_slice(unsafe {
                 std::slice::from_raw_parts(ptr as *const u32, len as usize * size / 4)
@@ -263,85 +277,62 @@ impl EntityManager {
         //     }
         // }
 
+        // forget about the Vecs so they don't get dropped
+        std::mem::forget(self.turrets);
+        std::mem::forget(self.enemies);
+        std::mem::forget(self.bullets);
+
         state.into_boxed_slice()
     }
+}
 
+impl EntityManager {
     pub fn from_state(state: &[u32]) -> EntityManager {
         let mut em = EntityManager::new();
 
         let mut offset = 0;
-        let turrets_len = state[0] as usize;
-        offset += 1;
-        let turret_size = std::mem::size_of::<Turret>();
-        let turrets_data = &state[offset..offset + turrets_len * turret_size / 4];
-        offset += turrets_len * turret_size / 4;
+        let len = state[offset + 0] as usize;
+        let cap = state[offset + 1] as usize;
+        offset += 2;
+        let size = std::mem::size_of::<Turret>();
+        let data = &state[offset..offset + len * size / 4];
+        offset += len * size / 4;
 
-        let ptr = turrets_data.as_ptr() as *mut Turret;
-        let turrets = unsafe { std::slice::from_raw_parts(ptr, turrets_len) };
+        let ptr = data.as_ptr() as *mut Turret;
+        em.turrets = unsafe { Vec::from_raw_parts(ptr, len, cap) };
 
-        // unsafe {
-        //     let turret_data_u8 = std::slice::from_raw_parts(
-        //         turrets_data.as_ptr() as *const u8,
-        //         turrets_data.len() * 4,
-        //     );
-        //     println!("turret_data_u8: ......{:?}", turret_data_u8);
-        //     println!("turrets_len: {}, turrets: {:?}", turrets_len, turrets);
-        // }
-
-        // em.turrets = turrets.as_slice();
-        em.turrets_n = turrets_len as u32;
-        em.turrets_arr = turrets.as_ptr() as *mut Turret;
-
-        for turret in turrets {
+        for turret in em.turrets.iter() {
             em.ids.insert(turret.id);
         }
 
-        let enemies_len = state[offset] as usize;
-        offset += 1;
-        let enemy_size = std::mem::size_of::<Enemy>();
+        let len = state[offset + 0] as usize;
+        let cap = state[offset + 1] as usize;
+        offset += 2;
+        let size = std::mem::size_of::<Enemy>();
+        let data = &state[offset..offset + len * size / 4];
+        offset += len * size / 4;
 
-        // println!("enemies_len: {}", enemies_len);
+        let ptr = data.as_ptr() as *mut Enemy;
+        em.enemies = unsafe { Vec::from_raw_parts(ptr, len, cap) };
 
-        let enemies_data = &state[offset..offset + enemies_len * enemy_size / 4];
-        offset += enemies_len * enemy_size / 4;
-
-        let ptr = enemies_data.as_ptr() as *mut Enemy;
-        let enemies = unsafe { std::slice::from_raw_parts(ptr, enemies_len) };
-
-        // unsafe {
-        //     let enemy_data_u8 = std::slice::from_raw_parts(
-        //         enemies_data.as_ptr() as *const u8,
-        //         enemies_data.len() * 4,
-        //     );
-        //     println!("enemy_data_u8: ......{:?}", enemy_data_u8);
-        //     println!(
-        //         "enemies_len: {}, enemies_data: {:?}, enemies: {:?}",
-        //         enemies_len, enemies_data, enemies
-        //     );
-        // }
-
-        // em.enemies = enemies.as_slice();
-        em.enemies_n = enemies_len as u32;
-        em.enemies_arr = enemies.as_ptr() as *mut Enemy;
-
-        for enemy in enemies {
+        for enemy in em.enemies.iter() {
             em.ids.insert(enemy.id);
         }
 
-        let bullets_len = state[offset] as usize;
-        offset += 1;
+        let len = state[offset + 0] as usize;
+        let cap = state[offset + 1] as usize;
+        offset += 2;
 
-        let bullet_size = std::mem::size_of::<Bullet>();
-        let bullets_data = &state[offset..offset + bullets_len * bullet_size / 4];
+        let size = std::mem::size_of::<Bullet>();
+        let data = &state[offset..offset + len * size / 4];
+        offset += len * size / 4;
 
-        // #[allow(unused_assignments)]
-        offset += bullets_len * bullet_size / 4;
+        let ptr = data.as_ptr() as *mut Bullet;
+        em.bullets = unsafe { Vec::from_raw_parts(ptr, len, cap) };
 
-        let ptr = bullets_data.as_ptr() as *mut Bullet;
-        let bullets = unsafe { std::slice::from_raw_parts(ptr, bullets_len) };
-
-        em.bullets_n = bullets_len as u32;
-        em.bullets_arr = bullets.as_ptr() as *mut Bullet;
+        for bullet in em.bullets.iter() {
+            em.ids.insert(bullet.id);
+        }
 
         em
     }
@@ -361,43 +352,43 @@ impl EntityManager {
         }
         match entity {
             Entity::Turret(turret) => {
-                let mut turrets = match self.turrets_n {
-                    0 => Vec::new(),
-                    _ => unsafe {
-                        std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize)
-                            .to_vec()
-                    },
-                };
-                turrets.push(turret);
-                self.turrets_n = turrets.len() as u32;
-                self.turrets_arr = turrets.as_ptr() as *mut Turret;
-                std::mem::forget(turrets); // prevent drop
+                // let mut turrets = match self.turrets_n {
+                //     0 => Vec::new(),
+                //     _ => unsafe {
+                //         std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize)
+                //             .to_vec()
+                //     },
+                // };
+                self.turrets.push(turret);
+                // self.turrets_n = turrets.len() as u32;
+                // self.turrets_arr = turrets.as_ptr() as *mut Turret;
+                // std::mem::forget(turrets); // prevent drop
             }
             Entity::Enemy(enemy) => {
-                let mut enemies = match self.enemies_n {
-                    0 => Vec::new(),
-                    _ => unsafe {
-                        std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize)
-                            .to_vec()
-                    },
-                };
-                enemies.push(enemy);
-                self.enemies_n = enemies.len() as u32;
-                self.enemies_arr = enemies.as_ptr() as *mut Enemy;
-                std::mem::forget(enemies); // prevent drop
+                // let mut enemies = match self.enemies_n {
+                //     0 => Vec::new(),
+                //     _ => unsafe {
+                //         std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize)
+                //             .to_vec()
+                //     },
+                // };
+                self.enemies.push(enemy);
+                // self.enemies_n = enemies.len() as u32;
+                // self.enemies_arr = enemies.as_ptr() as *mut Enemy;
+                // std::mem::forget(enemies); // prevent drop
             }
             Entity::Bullet(bullet) => {
-                let mut bullets = match self.bullets_n {
-                    0 => Vec::new(),
-                    _ => unsafe {
-                        std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize)
-                            .to_vec()
-                    },
-                };
-                bullets.push(bullet);
-                self.bullets_n = bullets.len() as u32;
-                self.bullets_arr = bullets.as_ptr() as *mut Bullet;
-                std::mem::forget(bullets); // prevent drop
+                // let mut bullets = match self.bullets_n {
+                //     0 => Vec::new(),
+                //     _ => unsafe {
+                //         std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize)
+                //             .to_vec()
+                //     },
+                // };
+                self.bullets.push(bullet);
+                // self.bullets_n = bullets.len() as u32;
+                // self.bullets_arr = bullets.as_ptr() as *mut Bullet;
+                // std::mem::forget(bullets); // prevent drop
             }
         }
     }
@@ -424,116 +415,115 @@ impl EntityManager {
     // }
 
     pub fn filter_dead(&mut self) {
-        let turrets = self.turrets_mut().unwrap().to_vec();
-        let new_turrets = turrets
-            .into_iter()
-            .filter(|turret| (!turret.dead).into())
-            .collect::<Vec<Turret>>();
-        let new_turrets = std::mem::ManuallyDrop::new(new_turrets);
-        self.turrets_n = new_turrets.len() as u32;
-        self.turrets_arr = new_turrets.as_ptr() as *mut Turret;
+        // let turrets = self.turrets_mut().unwrap().to_vec();
+        // let new_turrets = turrets
+        //     .into_iter()
+        //     .filter(|turret| (!turret.dead).into())
+        //     .collect::<Vec<Turret>>();
+        // let new_turrets = std::mem::ManuallyDrop::new(new_turrets);
+        // self.turrets_n = new_turrets.len() as u32;
+        // self.turrets_arr = new_turrets.as_ptr() as *mut Turret;
+        self.turrets.retain(|turret| (!turret.dead).into());
 
-        let enemies = self.enemies_mut().unwrap().to_vec();
-        let new_enemies = enemies
-            .into_iter()
-            .filter(|enemy| (!enemy.dead).into())
-            .collect::<Vec<Enemy>>();
-        let new_enemies = std::mem::ManuallyDrop::new(new_enemies);
-        self.enemies_n = new_enemies.len() as u32;
-        self.enemies_arr = new_enemies.as_ptr() as *mut Enemy;
+        // let enemies = self.enemies_mut().unwrap().to_vec();
+        // let new_enemies = enemies
+        //     .into_iter()
+        //     .filter(|enemy| (!enemy.dead).into())
+        //     .collect::<Vec<Enemy>>();
+        // let new_enemies = std::mem::ManuallyDrop::new(new_enemies);
+        // self.enemies_n = new_enemies.len() as u32;
+        // self.enemies_arr = new_enemies.as_ptr() as *mut Enemy;
+        self.enemies.retain(|enemy| (!enemy.dead).into());
 
-        let bullets = self.bullets_mut().unwrap().to_vec();
-        let new_bullets = bullets
-            .into_iter()
-            .filter(|bullet| (!bullet.dead).into())
-            .collect::<Vec<Bullet>>();
-        let new_bullets = std::mem::ManuallyDrop::new(new_bullets);
-        self.bullets_n = new_bullets.len() as u32;
-        self.bullets_arr = new_bullets.as_ptr() as *mut Bullet;
+        // let bullets = self.bullets_mut().unwrap().to_vec();
+        // let new_bullets = bullets
+        //     .into_iter()
+        //     .filter(|bullet| (!bullet.dead).into())
+        //     .collect::<Vec<Bullet>>();
+        // let new_bullets = std::mem::ManuallyDrop::new(new_bullets);
+        // self.bullets_n = new_bullets.len() as u32;
+        // self.bullets_arr = new_bullets.as_ptr() as *mut Bullet;
+        self.bullets.retain(|bullet| (!bullet.dead).into());
     }
 
-    pub fn turrets(&self) -> Option<&[Turret]> {
-        if self.turrets_arr.is_null() {
-            None
-        } else {
-            let slice =
-                unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
-            Some(slice)
-        }
-    }
+    // pub fn turrets(&self) -> Option<&[Turret]> {
+    //     if self.turrets_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice =
+    //             unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
+    //         Some(slice)
+    //     }
+    // }
 
     // Slice of mutable references to turrets
-    pub fn turrets_mut(&mut self) -> Option<&mut [Turret]> {
-        if self.turrets_arr.is_null() {
-            None
-        } else {
-            let slice = unsafe {
-                std::slice::from_raw_parts_mut(self.turrets_arr, self.turrets_n as usize)
-            };
-            Some(slice)
-        }
-    }
+    // pub fn turrets_mut(&mut self) -> Option<&mut [Turret]> {
+    //     if self.turrets_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice = unsafe {
+    //             std::slice::from_raw_parts_mut(self.turrets_arr, self.turrets_n as usize)
+    //         };
+    //         Some(slice)
+    //     }
+    // }
 
-    pub fn enemies(&self) -> Option<&[Enemy]> {
-        if self.enemies_arr.is_null() {
-            None
-        } else {
-            let slice =
-                unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
-            Some(slice)
-        }
-    }
+    // pub fn enemies(&self) -> Option<&[Enemy]> {
+    //     if self.enemies_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice =
+    //             unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
+    //         Some(slice)
+    //     }
+    // }
 
-    // Slice of mutable references to enemies
-    pub fn enemies_mut(&mut self) -> Option<&mut [Enemy]> {
-        if self.enemies_arr.is_null() {
-            None
-        } else {
-            let slice = unsafe {
-                std::slice::from_raw_parts_mut(self.enemies_arr, self.enemies_n as usize)
-            };
-            Some(slice)
-        }
-    }
+    // // Slice of mutable references to enemies
+    // pub fn enemies_mut(&mut self) -> Option<&mut [Enemy]> {
+    //     if self.enemies_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice = unsafe {
+    //             std::slice::from_raw_parts_mut(self.enemies_arr, self.enemies_n as usize)
+    //         };
+    //         Some(slice)
+    //     }
+    // }
 
-    pub fn bullets(&self) -> Option<&[Bullet]> {
-        if self.bullets_arr.is_null() {
-            None
-        } else {
-            let slice =
-                unsafe { std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize) };
-            Some(slice)
-        }
-    }
+    // pub fn bullets(&self) -> Option<&[Bullet]> {
+    //     if self.bullets_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice =
+    //             unsafe { std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize) };
+    //         Some(slice)
+    //     }
+    // }
 
-    // Slice of mutable references to bullets
-    pub fn bullets_mut(&mut self) -> Option<&mut [Bullet]> {
-        if self.bullets_arr.is_null() {
-            None
-        } else {
-            let slice = unsafe {
-                std::slice::from_raw_parts_mut(self.bullets_arr, self.bullets_n as usize)
-            };
-            Some(slice)
-        }
-    }
+    // // Slice of mutable references to bullets
+    // pub fn bullets_mut(&mut self) -> Option<&mut [Bullet]> {
+    //     if self.bullets_arr.is_null() {
+    //         None
+    //     } else {
+    //         let slice = unsafe {
+    //             std::slice::from_raw_parts_mut(self.bullets_arr, self.bullets_n as usize)
+    //         };
+    //         Some(slice)
+    //     }
+    // }
 
     pub fn get(&self, id: EntityId) -> Option<&Entity> {
         if self.ids.contains(&id) {
-            if let Some(turrets) = self.turrets() {
-                for turret in turrets {
-                    if turret.id == id {
-                        let entity: &Entity = turret.into();
-                        return Some(entity);
-                    }
+            for turret in self.turrets.iter() {
+                if turret.id == id {
+                    let entity: &Entity = turret.into();
+                    return Some(entity);
                 }
             }
-            if let Some(enemies) = self.enemies() {
-                for enemy in enemies {
-                    if enemy.id == id {
-                        let entity: &Entity = enemy.into();
-                        return Some(entity);
-                    }
+            for enemy in self.enemies.iter() {
+                if enemy.id == id {
+                    let entity: &Entity = enemy.into();
+                    return Some(entity);
                 }
             }
         }

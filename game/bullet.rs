@@ -9,6 +9,7 @@ use crate::turret::Turret;
 use crate::u32_bool::Bool;
 use crate::webhacks;
 use crate::State;
+use std::cell::RefCell;
 
 use crate::ACTIVE_RADIUS;
 use crate::ALPHA_BEIGE;
@@ -43,9 +44,9 @@ impl Bullet {
         }
     }
 
-    pub fn update(&mut self, state: &State) {
+    pub fn update(&mut self, state: &RefCell<State>) {
         // for now just move vertically down the screen
-        self.position.y += 200.0 * state.dt();
+        self.position.y += 200.0 * { state.borrow().dt() };
         // let man = state.man();
         // let target = man.get(self.target);
 
@@ -92,11 +93,11 @@ impl Bullet {
         }
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &State) {
+    pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
         // webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, _state: &State) {
+    pub fn draw_foreground(&self, _index: usize, _state: &RefCell<State>) {
         // let radius = if self.hover.into() {
         //     TURRET_RADIUS * 1.5
         // } else {
