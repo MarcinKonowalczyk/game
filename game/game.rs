@@ -671,18 +671,17 @@ fn update_entities(state: &State) -> u32 {
     life_lost
 }
 
-fn draw_entities_background(state: &RefCell<State>) {
-    let state_rc = state.borrow();
-    let man = state_rc.man.borrow();
+fn draw_entities_background(state: &State) {
+    let man = state.man.borrow();
 
     // draw lines from enemies to turrets if they are within range
     for enemy in man.enemies.iter() {
         for turret in man.turrets.iter() {
             let distance = enemy
-                .screen_position(state_rc.get_path())
+                .screen_position(state.get_path())
                 .dist(&turret.position);
             if distance < ACTIVE_RADIUS {
-                let enemy_pos = enemy.screen_position(state_rc.get_path());
+                let enemy_pos = enemy.screen_position(state.get_path());
                 webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
             }
         }
@@ -691,11 +690,11 @@ fn draw_entities_background(state: &RefCell<State>) {
     // draw line to mouse if it's within range
     for enemy in man.enemies.iter() {
         let distance = enemy
-            .screen_position(state_rc.get_path())
-            .dist(&state_rc.mouse_pos);
+            .screen_position(state.get_path())
+            .dist(&state.mouse_pos);
         if distance < ACTIVE_RADIUS {
-            let enemy_pos = enemy.screen_position(state_rc.get_path());
-            webhacks::draw_line_ex(enemy_pos, state_rc.mouse_pos, 2.0, RAYWHITE);
+            let enemy_pos = enemy.screen_position(state.get_path());
+            webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
         }
     }
 
@@ -711,12 +710,8 @@ fn draw_entities_background(state: &RefCell<State>) {
     }
 }
 
-fn draw_entities_foreground(state: &RefCell<State>) {
-    let state_rc = state.borrow();
-    let man = state_rc.man.borrow();
-    // let enemies = man.enemies;
-    // let turrets = man.turrets;
-    // let bullets = man.bullets;
+fn draw_entities_foreground(state: &State) {
+    let man = state.man.borrow();
 
     for (i, enemy) in man.enemies.iter().enumerate() {
         enemy.draw_foreground(i, state);
@@ -729,7 +724,7 @@ fn draw_entities_foreground(state: &RefCell<State>) {
     }
 }
 
-fn draw_mouse(_state: &RefCell<State>) {
+fn draw_mouse(_state: &State) {
     // let color = if state.mouse_btn.into() {
     //     RED
     // } else {
@@ -739,8 +734,7 @@ fn draw_mouse(_state: &RefCell<State>) {
     // webhacks::draw_circle(state.mouse_pos, 2.0, color);
 }
 
-fn draw_path(state: &RefCell<State>) {
-    let state = state.borrow();
+fn draw_path(state: &State) {
     // Draw the path
     let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
     for i in 1..path.len() {
@@ -751,8 +745,7 @@ fn draw_path(state: &RefCell<State>) {
     }
 }
 
-fn draw_text(state: &RefCell<State>) {
-    let state = state.borrow();
+fn draw_text(state: &State) {
     let slime_pos_text = format! {
         "slime: [{x}, {y}]",
         x = state.slime_pos.x.round(),
@@ -809,28 +802,23 @@ pub type GameFrame = fn(state: *mut State);
 
 #[no_mangle]
 pub fn game_frame(state_ptr: *mut State) {
-    let mut _state = unsafe { std::ptr::read(state_ptr) };
+    let mut state = unsafe { std::ptr::read(state_ptr) };
+    state.prev_time = state.curr_time;
+    state.curr_time = webhacks::get_time() as f32;
 
-    let life_lost = update_entities(&_state);
-    _state.life -= life_lost;
+    let life_lost = update_entities(&state);
+    state.life -= life_lost;
 
-    let game_over = _state.life == 0;
+    let game_over = state.life == 0;
 
-    let update = handle_keys(&_state);
-    _state.slime_pos = update.slime_pos;
-    _state.mute = update.mute.into();
+    let update = handle_keys(&state);
+    state.slime_pos = update.slime_pos;
+    state.mute = update.mute.into();
 
-    let update = handle_mouse(&_state);
-    _state.mouse_pos = update.mouse_pos;
-    _state.mouse_btn = update.mouse_btn.into();
-    _state.mouse_btn_pressed = update.mouse_btn_pressed.into();
-
-    let state = RefCell::new(_state);
-    {
-        let mut state = state.borrow_mut();
-        state.prev_time = state.curr_time;
-        state.curr_time = webhacks::get_time() as f32;
-    }
+    let update = handle_mouse(&state);
+    state.mouse_pos = update.mouse_pos;
+    state.mouse_btn = update.mouse_btn.into();
+    state.mouse_btn_pressed = update.mouse_btn_pressed.into();
 
     unsafe { raylib::BeginDrawing() };
 
@@ -838,7 +826,6 @@ pub fn game_frame(state_ptr: *mut State) {
         unsafe { raylib::ClearBackground(BLUE) };
 
         {
-            let state = state.borrow();
             let anim_blobs = unsafe {
                 std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
             };
@@ -857,7 +844,6 @@ pub fn game_frame(state_ptr: *mut State) {
             unsafe {
                 raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
             }
-            let state = state.borrow();
 
             // draw the game over text
             let text = "Game Over!";
@@ -884,7 +870,6 @@ pub fn game_frame(state_ptr: *mut State) {
 
     {
         // Update the music stream
-        let mut state = state.borrow_mut();
         webhacks::update_music_stream(state.music);
 
         // Update the frame count
@@ -893,7 +878,7 @@ pub fn game_frame(state_ptr: *mut State) {
 
     // Write back the state
     unsafe {
-        std::ptr::write(state_ptr, state.into_inner());
+        std::ptr::write(state_ptr, state);
     }
 }
 

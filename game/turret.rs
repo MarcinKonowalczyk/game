@@ -109,11 +109,11 @@ impl Turret {
         update.new_bullet = Some(new_bullet);
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
+    pub fn draw_background(&self, _index: usize, _state: &State) {
         webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, _state: &RefCell<State>) {
+    pub fn draw_foreground(&self, _index: usize, _state: &State) {
         let radius = if self.hover.into() {
             TURRET_RADIUS * 1.5
         } else {

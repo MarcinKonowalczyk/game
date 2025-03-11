@@ -118,14 +118,13 @@ impl Enemy {
         self.position = update.position;
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
+    pub fn draw_background(&self, _index: usize, _state: &State) {
         // let path = state.get_path();
         // let pos = self.screen_position(path);
         // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, state: &RefCell<State>) {
-        let state = state.borrow();
+    pub fn draw_foreground(&self, _index: usize, state: &State) {
         let path = state.get_path();
         let pos = self.screen_position(path);
         // let distances = state.get_distances();
