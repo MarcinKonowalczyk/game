@@ -83,7 +83,7 @@ mod native_runner {
                 game_load = load_fn(&lib, "game_load");
             }
 
-            if state.all_loaded.bool() {
+            if state.all_loaded.into() {
                 game_frame(&mut state);
             } else {
                 game_load(&mut state);
