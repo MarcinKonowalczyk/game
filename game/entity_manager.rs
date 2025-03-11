@@ -325,7 +325,9 @@ impl EntityManager {
 
         let size = std::mem::size_of::<Bullet>();
         let data = &state[offset..offset + len * size / 4];
-        offset += len * size / 4;
+
+        // #[allow(unused_assignments)]
+        // offset += len * size / 4;
 
         let ptr = data.as_ptr() as *mut Bullet;
         em.bullets = unsafe { Vec::from_raw_parts(ptr, len, cap) };

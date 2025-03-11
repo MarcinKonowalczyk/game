@@ -24,16 +24,6 @@ pub struct Turret {
     pub fire_cooldown: f32,
     pub id: EntityId,
 }
-
-#[inline]
-fn min_f32(a: f32, b: f32) -> f32 {
-    if a < b {
-        a
-    } else {
-        b
-    }
-}
-
 pub struct TurretUpdate {
     pub id: EntityId, // to match up with the turret
     pub dead: bool,
@@ -103,7 +93,7 @@ impl Turret {
         self.hover = update.hover.into();
     }
 
-    fn fire(&self, update: &TurretUpdate) -> Bullet {
+    fn fire(&self, _update: &TurretUpdate) -> Bullet {
         Bullet::new(self.position, Some(self), None)
     }
 
@@ -130,17 +120,3 @@ impl HasId for Turret {
         self.id = id;
     }
 }
-
-// impl HasKind for Turret {
-//     fn kind(&self) -> EntityKind {
-//         EntityKind::Turret
-//     }
-// }
-
-// use std::default::Default;
-
-// impl Default for Turret {
-//     fn default() -> Self {
-//         Turret::new(Vector2::default())
-//     }
-// }

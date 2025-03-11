@@ -194,44 +194,44 @@ pub fn game_init() -> State {
     }
 }
 
-// // deref state at the end of the frame
-// fn deref_state(state: StateRef) -> State {
-//     match Rc::try_unwrap(state) {
-//         Ok(state) => state,
-//         Err(_) => panic!("state is still referenced"),
-//     }
-//     .into_inner()
-// }
-
 fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
-    let n = arr.len().try_into().unwrap();
-
-    if n == 0 {
-        return (0, std::ptr::null_mut());
-    }
-
-    let mem_size = std::mem::size_of::<T>() * arr.len();
-    let layout = std::alloc::Layout::from_size_align(mem_size, 4).unwrap();
-    let ptr = unsafe { std::alloc::alloc(layout) as *mut T };
-
-    for (i, item) in arr.iter().enumerate() {
-        unsafe {
-            *ptr.offset(i as isize) = item.clone();
+    match arr.len() {
+        0 => (0, std::ptr::null_mut()),
+        n => {
+            let mem_size = std::mem::size_of::<T>() * n;
+            match std::alloc::Layout::from_size_align(mem_size, 4) {
+                Ok(layout) => {
+                    let ptr = unsafe { std::alloc::alloc(layout) as *mut T };
+                    for (i, item) in arr.iter().enumerate() {
+                        unsafe {
+                            *ptr.offset(i as isize) = item.clone();
+                        }
+                    }
+                    (n as u32, ptr)
+                }
+                Err(_) => {
+                    panic!("failed to clone_to_malloced");
+                }
+            }
         }
     }
-
-    (n, ptr)
 }
 
 #[allow(unused)]
 fn free_malloced<T>(len: u32, ptr: *mut T) {
-    if ptr.is_null() {
-        return;
+    match ptr {
+        _ if ptr.is_null() => {}
+        _ => {
+            let size = std::mem::size_of::<T>() * len as usize;
+            match std::alloc::Layout::from_size_align(size, 4) {
+                Ok(layout) => {
+                    let _ptr = ptr as *mut u8;
+                    unsafe { std::alloc::dealloc(_ptr, layout) }
+                }
+                Err(_) => {}
+            }
+        }
     }
-    let size = std::mem::size_of::<T>() * len as usize;
-    let layout = std::alloc::Layout::from_size_align(size, 4).unwrap();
-    let _ptr = ptr as *mut u8;
-    unsafe { std::alloc::dealloc(_ptr, layout) }
 }
 
 pub type GameLoad = fn(state: *mut State);
@@ -239,76 +239,66 @@ pub type GameLoad = fn(state: *mut State);
 #[no_mangle]
 pub fn game_load(_state: *mut State) {
     let mut state = unsafe { std::ptr::read(_state) };
+    state.prev_time = state.curr_time;
+    state.curr_time = webhacks::get_time() as f32;
 
-    {
-        state.prev_time = state.curr_time;
-        state.curr_time = webhacks::get_time() as f32;
-    }
-
-    {
-        if state.all_loaded.into() {
-            return;
-        }
+    if state.all_loaded.into() {
+        return;
     }
 
     let mut any_not_loaded = false;
 
     // check if the music is loaded
-    {
-        if !webhacks::is_music_loaded(state.music) {
-            any_not_loaded = true;
+    if !webhacks::is_music_loaded(state.music) {
+        any_not_loaded = true;
+    }
+
+    // check if the font is loaded
+    if !webhacks::is_font_loaded(state.font) {
+        any_not_loaded = true;
+    }
+
+    // check if the image is loaded
+    if !webhacks::is_image_loaded(state.image) {
+        any_not_loaded = true;
+    } else {
+        // image is loaded! let's load the texture
+        // state.texture = webhacks::load_texture_from_image(state.image);
+
+        if !webhacks::is_texture_loaded(state.texture) {
+            state.texture = webhacks::load_texture_from_image(state.image);
         }
 
-        // check if the font is loaded
-        if !webhacks::is_font_loaded(state.font) {
+        if !webhacks::is_texture_loaded(state.texture) {
             any_not_loaded = true;
         }
+    }
 
-        // check if the image is loaded
-        if !webhacks::is_image_loaded(state.image) {
-            any_not_loaded = true;
+    if !any_not_loaded {
+        state.all_loaded = true.into();
+
+        // Once we've determined that init/load is done, we can unload some resources
+
+        let blobs = anim::find_blobs(state.image);
+        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
+
+        state.anim_blobs_arr = anim_blobs_arr;
+        state.anim_blobs_n = anim_blobs_n;
+
+        webhacks::unload_image(state.image); // we don't need the image anymore
+
+        if state.mute.into() {
+            webhacks::set_music_volume(state.music, 0.0);
         } else {
-            // image is loaded! let's load the texture
-            // state.texture = webhacks::load_texture_from_image(state.image);
-
-            if !webhacks::is_texture_loaded(state.texture) {
-                state.texture = webhacks::load_texture_from_image(state.image);
-            }
-
-            if !webhacks::is_texture_loaded(state.texture) {
-                any_not_loaded = true;
-            }
+            webhacks::set_music_volume(state.music, 1.0);
         }
+
+        let texture_shape = webhacks::get_texture_shape(state.texture);
+        webhacks::log(
+            -1,
+            format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
+        );
     }
-
-    {
-        if !any_not_loaded {
-            state.all_loaded = true.into();
-
-            // Once we've determined that init/load is done, we can unload some resources
-
-            let blobs = anim::find_blobs(state.image);
-            let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
-
-            state.anim_blobs_arr = anim_blobs_arr;
-            state.anim_blobs_n = anim_blobs_n;
-
-            webhacks::unload_image(state.image); // we don't need the image anymore
-
-            if state.mute.into() {
-                webhacks::set_music_volume(state.music, 0.0);
-            } else {
-                webhacks::set_music_volume(state.music, 1.0);
-            }
-
-            let texture_shape = webhacks::get_texture_shape(state.texture);
-            webhacks::log(
-                -1,
-                format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
-            );
-        }
-    }
-    println!("end of game_load");
 
     // wrtie back the state
     unsafe {
