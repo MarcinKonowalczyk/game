@@ -16,7 +16,21 @@ use crate::ALPHA_BEIGE;
 use crate::TURRET_RADIUS;
 use crate::WINDOW_HEIGHT;
 
-use std::rc::Weak;
+pub struct BulletUpdate {
+    pub id: EntityId,
+    pub dead: bool,
+    pub position: Vector2,
+}
+
+impl From<&Bullet> for BulletUpdate {
+    fn from(bullet: &Bullet) -> Self {
+        BulletUpdate {
+            id: bullet.id,
+            dead: bullet.dead.into(),
+            position: bullet.position,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Bullet {
@@ -44,53 +58,29 @@ impl Bullet {
         }
     }
 
-    pub fn update(&mut self, state: &RefCell<State>) {
+    pub fn update(&self, state: &RefCell<State>) -> BulletUpdate {
+        let dt = state.borrow().dt();
+
+        let mut update = BulletUpdate::from(self);
+
         // for now just move vertically down the screen
-        self.position.y += 200.0 * { state.borrow().dt() };
-        // let man = state.man();
-        // let target = man.get(self.target);
+        update.position.y += 200.0 * dt;
 
-        // match target {
-        //     Some(target) => {
-        //         // println!("target: {:?}", target);
-        //         let target: &Enemy = target.downcast_ref();
-
-        //         // let dir = target.position - self.position;
-        //         // let dist = dir.mag();
-        //         // let speed = 100.0;
-        //         // let dt = state.curr_time - state.prev_time;
-        //         // let step = speed * dt;
-        //         // if dist < step {
-        //         //     self.dead = Bool::True();
-        //         //     target.health -= 10.0;
-        //         // } else {
-        //         //     let dir = dir.normalize();
-        //         //     self.position += dir * step;
-        //         // }
-        //     }
-        //     None => {
-        //         println!("target is None");
-        //         // self.dead = true.into();
-        //     }
-
-        // let target = target.unwrap();
-
-        // let mouse_distance = self.position.dist(&state.mouse_pos);
-        // if mouse_distance < TURRET_RADIUS {
-        //     self.hover = Bool::True();
-        // } else if mouse_distance < 1.5 * TURRET_RADIUS {
-        //     //
-        // } else {
-        //     self.hover = Bool::False();
-        // }
-        // if self.hover.into() && state.mouse_btn_pressed.into() {
-        //     // despawn the turret
-        //     self.dead = Bool::True();
-        // }
-
-        if self.position.y > WINDOW_HEIGHT as f32 {
-            self.dead = true.into();
+        // despawn if off screen
+        if update.position.y > WINDOW_HEIGHT as f32
+            || update.position.y < 0.0
+            || update.position.x > WINDOW_HEIGHT as f32
+            || update.position.x < 0.0
+        {
+            update.dead = true;
         }
+        update
+    }
+
+    pub fn apply(&mut self, update: &BulletUpdate) {
+        debug_assert_eq!(self.id, update.id);
+        self.position = update.position;
+        self.dead = update.dead.into();
     }
 
     pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {

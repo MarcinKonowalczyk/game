@@ -560,19 +560,24 @@ fn update_entities(state: &RefCell<State>) {
             _ => {}
         }
 
-        let path_length = { state.borrow().path_length };
-        let mut life_lost = 0;
-        for enemy in state.borrow().man.borrow_mut().enemies.iter_mut() {
-            enemy.update(state);
+        let updates = state
+            .borrow()
+            .man
+            .borrow()
+            .enemies
+            .iter()
+            .map(|enemy| enemy.update(state))
+            .collect::<Vec<_>>();
 
-            if enemy.position >= path_length {
-                enemy.dead = true.into();
-                life_lost += 1;
-            };
+        // Calculate the total damage done by the enemies
+        let life_lost = updates.iter().map(|update| update.damage_done).sum::<u32>();
 
-            if enemy.health <= 0.0 {
-                enemy.dead = true.into();
-            }
+        // Apply the updates
+        for (enemy, update) in std::iter::Iterator::zip(
+            state.borrow().man.borrow_mut().enemies.iter_mut(),
+            updates.iter(),
+        ) {
+            enemy.apply(update);
         }
 
         // println!("life_lost: {}", life_lost);
@@ -581,13 +586,27 @@ fn update_entities(state: &RefCell<State>) {
             state.life -= std::cmp::min(life_lost, state.life);
         }
 
-        for bullet in state.borrow().man.borrow_mut().bullets.iter_mut() {
-            bullet.update(state);
-        }
-
         // state.save_man(man);
     }
+    {
+        // Get all the bullet updates
+        let updates = state
+            .borrow()
+            .man
+            .borrow()
+            .bullets
+            .iter()
+            .map(|bullet| bullet.update(state))
+            .collect::<Vec<_>>();
 
+        // Apply all the updates
+        for (bullet, update) in std::iter::Iterator::zip(
+            state.borrow().man.borrow_mut().bullets.iter_mut(),
+            updates.iter(),
+        ) {
+            bullet.apply(update);
+        }
+    }
     {
         // Get all the turret updates
         let updates = state
@@ -632,7 +651,6 @@ fn update_entities(state: &RefCell<State>) {
                 .borrow_mut()
                 .add(Turret::new(state.borrow().mouse_pos).into());
         }
-        // state.save_man(man);
     }
 
     // filter dead entities

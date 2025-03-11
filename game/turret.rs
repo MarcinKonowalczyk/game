@@ -98,6 +98,7 @@ impl Turret {
     }
 
     pub fn apply(&mut self, update: &TurretUpdate) {
+        debug_assert_eq!(self.id, update.id);
         self.dead = update.dead.into();
         self.fire_cooldown = update.fire_cooldown;
         self.hover = update.hover.into();

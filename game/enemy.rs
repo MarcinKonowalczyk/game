@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
@@ -49,6 +50,24 @@ mod tests {
     }
 }
 
+pub struct EnemyUpdate {
+    pub id: EntityId,
+    pub position: f32,
+    pub dead: bool,
+    pub damage_done: u32,
+}
+
+impl From<&Enemy> for EnemyUpdate {
+    fn from(enemy: &Enemy) -> Self {
+        Self {
+            id: enemy.id,
+            position: enemy.position,
+            dead: enemy.dead.into(),
+            damage_done: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Enemy {
     pub position: f32, // position along the path in pixels
@@ -79,8 +98,24 @@ impl Enemy {
         }
     }
 
-    pub fn update(&mut self, state: &RefCell<State>) {
-        self.position += SPEED_ENEMY * state.borrow().dt();
+    pub fn update(&self, state: &RefCell<State>) -> EnemyUpdate {
+        let path_length = { state.borrow().path_length };
+
+        let mut update = EnemyUpdate::from(self);
+        update.position += SPEED_ENEMY * state.borrow().dt();
+
+        if update.position >= path_length {
+            update.dead = true;
+            update.damage_done += 1;
+        }
+
+        update
+    }
+
+    pub fn apply(&mut self, update: &EnemyUpdate) {
+        debug_assert_eq!(self.id, update.id);
+        self.dead = update.dead.into();
+        self.position = update.position;
     }
 
     pub fn draw_background(&self, _index: usize, _state: &RefCell<State>) {
