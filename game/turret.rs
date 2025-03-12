@@ -1,6 +1,5 @@
 use raylib_wasm::PINK;
 
-use crate::bullet::Bullet;
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
 
@@ -83,13 +82,20 @@ impl Turret {
         }
 
         update.fire_cooldown -= dt;
-        update.bullet_request = if update.fire_cooldown <= 0.0 {
-            update.fire_cooldown = FIRE_COOLDOWN;
-            // self.fire(&mut update);
-            Some(self.fire(&update))
-        } else {
-            None
-        };
+        if update.fire_cooldown <= 0.0 {
+            if let Some(enemy) = state.man.closest_enemy(self.position) {
+                if self.position.dist(&enemy.position) < ACTIVE_RADIUS {
+                    // fire!
+                    update.bullet_request = Some(BulletRequest {
+                        position: self.position,
+                        source: self.id,
+                        target: Some(enemy.id),
+                    });
+                    update.fire_cooldown = FIRE_COOLDOWN;
+                }
+            }
+        }
+
         update
     }
 
@@ -98,14 +104,6 @@ impl Turret {
         self.dead = update.dead.into();
         self.fire_cooldown = update.fire_cooldown;
         self.hover = update.hover.into();
-    }
-
-    fn fire(&self, _update: &TurretUpdate) -> BulletRequest {
-        BulletRequest {
-            position: self.position,
-            source: self.id,
-            target: None,
-        }
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {

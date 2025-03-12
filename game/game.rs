@@ -29,7 +29,8 @@ const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
 const SPAWN_INTERVAL: f32 = 1.0;
-const SPEED_ENEMY: f32 = 340.0;
+const SPEED_ENEMY: f32 = 240.0;
+const SPEED_BULLET: f32 = SPEED_ENEMY + 50.0;
 // const SPEED_ENEMY: f32 = 1340.0;
 
 const TURRET_RADIUS: f32 = 10.0;
@@ -71,8 +72,6 @@ pub struct State {
     pub path_length: f32,
     pub mute: Bool,
     pub life: u32,
-    // pub man_state_n: u32,
-    // pub man_state_arr: *mut u32,
     pub man: EntityManager,
 }
 
@@ -585,11 +584,9 @@ fn draw_entities_background(state: &State) {
     // draw lines from enemies to turrets if they are within range
     for enemy in state.man.enemies.iter() {
         for turret in state.man.turrets.iter() {
-            let distance = enemy
-                .screen_position(state.get_path())
-                .dist(&turret.position);
+            let distance = enemy.position.dist(&turret.position);
             if distance < ACTIVE_RADIUS {
-                let enemy_pos = enemy.screen_position(state.get_path());
+                let enemy_pos = enemy.position;
                 webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
             }
         }
@@ -597,11 +594,9 @@ fn draw_entities_background(state: &State) {
 
     // draw line to mouse if it's within range
     for enemy in state.man.enemies.iter() {
-        let distance = enemy
-            .screen_position(state.get_path())
-            .dist(&state.mouse_pos);
+        let distance = enemy.position.dist(&state.mouse_pos);
         if distance < ACTIVE_RADIUS {
-            let enemy_pos = enemy.screen_position(state.get_path());
+            let enemy_pos = enemy.position;
             webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
         }
     }
@@ -613,8 +608,8 @@ fn draw_entities_background(state: &State) {
         turret.draw_background(i, state);
     }
 
-    for (i, bullet) in state.man.bullets.iter().enumerate() {
-        bullet.draw_background(i, state);
+    for bullet in state.man.bullets.iter() {
+        bullet.draw_background(state);
     }
 }
 
@@ -699,9 +694,9 @@ fn draw_text(state: &State) {
     let life_text = format!("life: {}", state.life);
     let font_size = 30;
     let text_size = webhacks::measure_text(state.font, &life_text, font_size, 2.0);
-    let mut last = path[path.len() - 1].clone();
-    let pos = last.add(&Vector2::new(-text_size.x as f32 / 2.0, 20.0));
-    webhacks::draw_text(state.font, &life_text, *pos, font_size, 2.0, RAYWHITE);
+    let last = path[path.len() - 1];
+    let pos = last + Vector2::new(-text_size.x as f32 / 2.0, 20.0);
+    webhacks::draw_text(state.font, &life_text, pos, font_size, 2.0, RAYWHITE);
 }
 
 pub type GameFrame = fn(state: *mut State);
