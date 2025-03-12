@@ -41,17 +41,11 @@ pub struct Bullet {
 }
 
 impl Bullet {
-    pub fn new(position: Vector2, source: Option<&Turret>, target: Option<&Enemy>) -> Bullet {
+    pub fn new(position: Vector2, source: EntityId, target: Option<EntityId>) -> Bullet {
         Bullet {
             position,
-            source: match source {
-                Some(turret) => turret.id,
-                None => 0,
-            },
-            target: match target {
-                Some(enemy) => enemy.id,
-                None => 0,
-            },
+            source: source,
+            target: target.unwrap_or(NO_ID),
             dead: false.into(),
             id: NO_ID,
         }

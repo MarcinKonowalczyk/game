@@ -435,24 +435,24 @@ fn draw_slime_at_pos(
 
 struct HandleEntitiesUpdate {
     life_lost: u32,
-    new_enemies: Option<Vec<Enemy>>,
-    enemy_updates: Option<Vec<enemy::EnemyUpdate>>,
-    bullet_updates: Option<Vec<bullet::BulletUpdate>>,
-    turret_updates: Option<Vec<turret::TurretUpdate>>,
-    new_bullets: Option<Vec<bullet::Bullet>>,
-    new_turret: Option<Turret>,
+    new_enemies: Vec<Enemy>,
+    enemy_updates: Vec<enemy::EnemyUpdate>,
+    bullet_updates: Vec<bullet::BulletUpdate>,
+    turret_updates: Vec<turret::TurretUpdate>,
+    new_bullets: Vec<bullet::Bullet>,
+    new_turrets: Vec<turret::Turret>,
 }
 
 impl HandleEntitiesUpdate {
     fn new() -> HandleEntitiesUpdate {
         HandleEntitiesUpdate {
             life_lost: 0,
-            new_enemies: None,
-            enemy_updates: None,
-            bullet_updates: None,
-            turret_updates: None,
-            new_bullets: None,
-            new_turret: None,
+            new_enemies: vec![],
+            enemy_updates: vec![],
+            bullet_updates: vec![],
+            turret_updates: vec![],
+            new_bullets: vec![],
+            new_turrets: vec![],
         }
     }
 }
@@ -483,9 +483,11 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             }
             _ => {}
         }
-        update.new_enemies = Some(new_enemies);
+        update.new_enemies = new_enemies;
+    }
 
-        let enemy_updates = state
+    {
+        update.enemy_updates = state
             .man
             .enemies
             .iter()
@@ -493,141 +495,88 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             .collect::<Vec<_>>();
 
         // Calculate the total damage done by the enemies
-        update.life_lost = enemy_updates
+        update.life_lost = update
+            .enemy_updates
             .iter()
             .map(|update| update.damage_done)
             .sum::<u32>();
         update.life_lost = std::cmp::min(update.life_lost, state.life);
-
-        // Apply the updates
-        // for (enemy, update) in
-        //     std::iter::Iterator::zip(state.man.enemies.iter_mut(), enemy_updates.iter())
-        // {
-        //     enemy.apply(update);
-        // }
-        update.enemy_updates = Some(enemy_updates);
-
-        // println!("life_lost: {}", life_lost);
-
-        // state.save_man(man);
     }
+
     {
-        // Get all the bullet updates
-        let updates = state
+        update.bullet_updates = state
             .man
             .bullets
             .iter()
             .map(|bullet| bullet.update(state))
             .collect::<Vec<_>>();
-
-        // Apply all the updates
-        // for (bullet, update) in
-        //     std::iter::Iterator::zip(state.man.bullets.iter_mut(), updates.iter())
-        // {
-        //     bullet.apply(update);
-        // }
-        update.bullet_updates = Some(updates);
     }
+
     {
         // Get all the turret updates
-        // let turret_updates = state
-        //     .man
-        //     .turrets
-        //     .iter()
-        //     .map(|turret| turret.update(state))
-        //     .collect::<Vec<_>>();
-        let mut turret_updates = vec![];
-        let mut new_bullets = vec![];
-        for turret in state.man.turrets.iter() {
-            let (update, bullet) = turret.update(state);
-            turret_updates.push(update);
-            if let Some(bullet) = bullet {
-                new_bullets.push(bullet);
-            }
-        }
+        update.turret_updates = state
+            .man
+            .turrets
+            .iter()
+            .map(|turret| turret.update(state))
+            .collect::<Vec<_>>();
+
+        update.new_bullets = update
+            .turret_updates
+            .iter()
+            .filter_map(|update| match &update.bullet_request {
+                Some(bullet_request) => {
+                    let bullet = bullet::Bullet::new(
+                        bullet_request.position,
+                        bullet_request.source,
+                        bullet_request.target,
+                    );
+                    Some(bullet.into())
+                }
+                None => None,
+            })
+            .collect::<Vec<_>>();
 
         // Check whether any turrets are dead
-        let any_dead = turret_updates.iter().any(|update| update.dead.into());
-
-        // Apply all the updates
-        // for (turret, update) in
-        //     std::iter::Iterator::zip(state.man.turrets.iter_mut(), updates.iter())
-        // {
-        //     turret.apply(update);
-        // }
-        update.turret_updates = Some(turret_updates);
-        update.new_bullets = Some(new_bullets);
-
-        // Get all the new bullets
-        // let new_bullets = turret_updates
-        //     .iter()
-        //     .filter_map(|update| update.new_bullet.clone())
-        //     .collect::<Vec<_>>();
-
-        // Spawn new bullets
-        // {
-        //     for bullet in new_bullets {
-        //         state.man.add(bullet.into());
-        //     }
-        // }
-        // update.new_bullets = Some(new_bullets);
+        let any_dead = update
+            .turret_updates
+            .iter()
+            .any(|update| update.dead.into());
 
         if !any_dead && { state.mouse_btn_pressed.into() } {
-            update.new_turret = Some(Turret::new(state.mouse_pos).into());
+            update.new_turrets.push(Turret::new(state.mouse_pos).into());
         }
     }
-
-    // filter dead entities
-    // state.man.filter_dead();
 
     update
 }
 
-// HandleEntitiesUpdate {
-//     life_lost: u32,
-//     new_enemies: Option<Vec<Enemy>>,
-//     enemy_updates: Option<Vec<enemy::EnemyUpdate>>,
-//     bullet_updates: Option<Vec<bullet::BulletUpdate>>,
-//     turret_updates: Option<Vec<turret::TurretUpdate>>,
-//     // new_bullets: Option<Vec<bullet::Bullet>>,
-//     new_turret: Option<Turret>,
-// }
-
 fn apply_entities_update(state: &mut State, update: HandleEntitiesUpdate) {
     state.life -= update.life_lost;
 
-    if let Some(new_enemies) = update.new_enemies {
-        new_enemies
-            .into_iter()
-            .for_each(|enemy| state.man.add(enemy.into()));
-    };
+    std::iter::Iterator::zip(state.man.enemies.iter_mut(), update.enemy_updates.iter())
+        .for_each(|(enemy, update)| enemy.apply(update));
 
-    if let Some(enemy_updates) = update.enemy_updates {
-        std::iter::Iterator::zip(state.man.enemies.iter_mut(), enemy_updates.iter())
-            .for_each(|(enemy, update)| enemy.apply(update));
-    };
+    std::iter::Iterator::zip(state.man.bullets.iter_mut(), update.bullet_updates.iter())
+        .for_each(|(bullet, update)| bullet.apply(update));
 
-    if let Some(bullet_updates) = update.bullet_updates {
-        std::iter::Iterator::zip(state.man.bullets.iter_mut(), bullet_updates.iter())
-            .for_each(|(bullet, update)| bullet.apply(update));
-    };
+    std::iter::Iterator::zip(state.man.turrets.iter_mut(), update.turret_updates.iter())
+        .for_each(|(turret, update)| turret.apply(update));
 
-    if let Some(turret_updates) = update.turret_updates {
-        std::iter::Iterator::zip(state.man.turrets.iter_mut(), turret_updates.iter())
-            .for_each(|(turret, update)| turret.apply(update));
-    };
+    update
+        .new_enemies
+        .into_iter()
+        .for_each(|enemy| state.man.add(enemy.into()));
 
-    // Spawn new bullets
-    if let Some(new_bullets) = update.new_bullets {
-        new_bullets
-            .into_iter()
-            .for_each(|bullet| state.man.add(bullet.into()));
-    }
+    update
+        .new_bullets
+        .into_iter()
+        .for_each(|bullet| state.man.add(bullet.into()));
 
-    // Spawn new turret
-    if let Some(new_turret) = update.new_turret {
-        state.man.add(new_turret.into());
-    }
+    update
+        .new_turrets
+        .into_iter()
+        .for_each(|turret| state.man.add(turret.into()));
 
     state.man.filter_dead();
 }

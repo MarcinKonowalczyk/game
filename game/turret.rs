@@ -29,6 +29,7 @@ pub struct TurretUpdate {
     pub dead: bool,
     pub fire_cooldown: f32,
     pub hover: bool,
+    pub bullet_request: Option<BulletRequest>,
 }
 
 impl From<&Turret> for TurretUpdate {
@@ -38,8 +39,15 @@ impl From<&Turret> for TurretUpdate {
             dead: turret.dead.into(),
             fire_cooldown: turret.fire_cooldown,
             hover: turret.hover.into(),
+            bullet_request: None,
         }
     }
+}
+
+pub struct BulletRequest {
+    pub position: Vector2,
+    pub source: EntityId,
+    pub target: Option<EntityId>,
 }
 
 impl Turret {
@@ -53,7 +61,7 @@ impl Turret {
         }
     }
 
-    pub fn update(&self, state: &State) -> (TurretUpdate, Option<Bullet>) {
+    pub fn update(&self, state: &State) -> TurretUpdate {
         let mouse_pos = state.mouse_pos;
         let mouse_btn_pressed = state.mouse_btn_pressed;
         let dt = state.dt();
@@ -75,15 +83,14 @@ impl Turret {
         }
 
         update.fire_cooldown -= dt;
-        let bullet = if update.fire_cooldown <= 0.0 {
+        update.bullet_request = if update.fire_cooldown <= 0.0 {
             update.fire_cooldown = FIRE_COOLDOWN;
             // self.fire(&mut update);
             Some(self.fire(&update))
         } else {
             None
         };
-
-        (update, bullet)
+        update
     }
 
     pub fn apply(&mut self, update: &TurretUpdate) {
@@ -93,8 +100,12 @@ impl Turret {
         self.hover = update.hover.into();
     }
 
-    fn fire(&self, _update: &TurretUpdate) -> Bullet {
-        Bullet::new(self.position, Some(self), None)
+    fn fire(&self, _update: &TurretUpdate) -> BulletRequest {
+        BulletRequest {
+            position: self.position,
+            source: self.id,
+            target: None,
+        }
     }
 
     pub fn draw_background(&self, _index: usize, _state: &State) {
