@@ -5,6 +5,7 @@ pub const NO_ID: EntityId = 0;
 use crate::bullet::Bullet;
 use crate::enemy::Enemy;
 use crate::turret::Turret;
+use crate::vec2::Vector2;
 use crate::webhacks;
 use std::collections::HashSet;
 
@@ -13,14 +14,7 @@ pub struct EntityManager {
     pub turrets: Vec<Turret>,
     pub enemies: Vec<Enemy>,
     pub bullets: Vec<Bullet>,
-    // turrets_n: u32,
-    // turrets_arr: *mut Turret,
-    // enemies_n: u32,
-    // enemies_arr: *mut Enemy,
-    // bullets_n: u32,
-    // bullets_arr: *mut Bullet,
     pub ids: HashSet<EntityId>,
-    // pub state_ref: StateWeakRef<'a>,
 }
 
 use std::fmt::Display;
@@ -44,62 +38,21 @@ pub trait HasId {
     fn set_id(&mut self, id: EntityId);
 }
 
+#[derive(Debug)]
 pub enum Entity {
     Turret(Turret),
     Enemy(Enemy),
     Bullet(Bullet),
 }
 
-impl Entity {
-    pub fn downcast_ref<T: HasId>(&self) -> &T {
-        match self {
-            Entity::Turret(turret) => unsafe { std::mem::transmute(turret) },
-            Entity::Enemy(enemy) => unsafe { std::mem::transmute(enemy) },
-            Entity::Bullet(bullet) => unsafe { std::mem::transmute(bullet) },
-        }
-    }
-}
-// pub fn unwrap_turret(&self) -> &Turret {
-//     match self {
-//         Entity::Turret(turret) => turret,
-//         _ => panic!("unwrap_turret: not a turret"),
+// impl Entity {
+//     pub fn downcast_ref<T>(&self) -> &T {
+//         match self {
+//             Entity::Turret(turret) => unsafe { std::mem::transmute(turret) },
+//             Entity::Enemy(enemy) => unsafe { std::mem::transmute(enemy) },
+//             Entity::Bullet(bullet) => unsafe { std::mem::transmute(bullet) },
+//         }
 //     }
-// }
-
-// pub fn unwrap_enemy(&self) -> &Enemy {
-//     match self {
-//         Entity::Enemy(enemy) => enemy,
-//         _ => panic!("unwrap_enemy: not an enemy"),
-//     }
-// }
-
-// pub fn unwrap_turret_mut(&mut self) -> &mut Turret {
-//     match self {
-//         Entity::Turret(turret) => turret,
-//         _ => panic!("unwrap_turret_mut: not a turret"),
-//     }
-// }
-
-// pub fn unwrap_enemy_mut(&mut self) -> &mut Enemy {
-//     match self {
-//         Entity::Enemy(enemy) => enemy,
-//         _ => panic!("unwrap_enemy_mut: not an enemy"),
-//     }
-// }
-
-// pub fn is_turret(&self) -> bool {
-//     match self {
-//         Entity::Turret(_) => true,
-//         _ => false,
-//     }
-// }
-
-// pub fn is_enemy(&self) -> bool {
-//     match self {
-//         Entity::Enemy(_) => true,
-//         _ => false,
-//     }
-// }
 // }
 
 impl HasId for Entity {
@@ -217,66 +170,6 @@ impl EntityManager {
             });
         }
 
-        // unsafe {
-        //     let state_u8 = std::slice::from_raw_parts(state.as_ptr() as *const u8, state.len() * 4);
-        //     let turret_1 = self.turrets_arr;
-        //     let turret_1_u8 = std::slice::from_raw_parts(
-        //         turret_1 as *const Turret as *const u8,
-        //         std::mem::size_of::<Turret>(),
-        //     );
-        //     let turret_2 = self.turrets_arr.add(1);
-        //     let turret_2_u8 = std::slice::from_raw_parts(
-        //         turret_2 as *const Turret as *const u8,
-        //         std::mem::size_of::<Turret>(),
-        //     );
-
-        //     let turret_3_u8 = if self.turrets_n > 2 {
-        //         let turret_3 = self.turrets_arr.add(2);
-        //         Some(std::slice::from_raw_parts(
-        //             turret_3 as *const Turret as *const u8,
-        //             std::mem::size_of::<Turret>(),
-        //         ))
-        //     } else {
-        //         None
-        //     };
-
-        //     let turret_4_u8 = if self.turrets_n > 3 {
-        //         let turret_4 = self.turrets_arr.add(3);
-        //         Some(std::slice::from_raw_parts(
-        //             turret_4 as *const Turret as *const u8,
-        //             std::mem::size_of::<Turret>(),
-        //         ))
-        //     } else {
-        //         None
-        //     };
-
-        //     println!("> to_state");
-        //     println!("  state_u8: {:?}", state_u8);
-        //     println!("  turret_1_u8: .........{:?}", turret_1_u8);
-        //     println!(
-        //         "  turret_2_u8: ...........................................................................{:?}",
-        //         turret_2_u8
-        //     );
-        //     match turret_3_u8 {
-        //         Some(turret_3_u8) => {
-        //             println!(
-        //                 "  turret_3_u8: ..............................................................................................................................................{:?}",
-        //                 turret_3_u8
-        //             );
-        //         }
-        //         _ => {}
-        //     }
-        //     match turret_4_u8 {
-        //         Some(turret_4_u8) => {
-        //             println!(
-        //                 "  turret_4_u8: ..................................................................................................................................................................................................................{:?}",
-        //                 turret_4_u8
-        //             );
-        //         }
-        //         _ => {}
-        //     }
-        // }
-
         // forget about the Vecs so they don't get dropped
         std::mem::forget(self.turrets);
         std::mem::forget(self.enemies);
@@ -352,181 +245,90 @@ impl EntityManager {
             let id = self.gen_id();
             entity.set_id(id);
         }
+        self.ids.insert(entity.id());
         match entity {
             Entity::Turret(turret) => {
-                // let mut turrets = match self.turrets_n {
-                //     0 => Vec::new(),
-                //     _ => unsafe {
-                //         std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize)
-                //             .to_vec()
-                //     },
-                // };
                 self.turrets.push(turret);
-                // self.turrets_n = turrets.len() as u32;
-                // self.turrets_arr = turrets.as_ptr() as *mut Turret;
-                // std::mem::forget(turrets); // prevent drop
             }
             Entity::Enemy(enemy) => {
-                // let mut enemies = match self.enemies_n {
-                //     0 => Vec::new(),
-                //     _ => unsafe {
-                //         std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize)
-                //             .to_vec()
-                //     },
-                // };
                 self.enemies.push(enemy);
-                // self.enemies_n = enemies.len() as u32;
-                // self.enemies_arr = enemies.as_ptr() as *mut Enemy;
-                // std::mem::forget(enemies); // prevent drop
             }
             Entity::Bullet(bullet) => {
-                // let mut bullets = match self.bullets_n {
-                //     0 => Vec::new(),
-                //     _ => unsafe {
-                //         std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize)
-                //             .to_vec()
-                //     },
-                // };
                 self.bullets.push(bullet);
-                // self.bullets_n = bullets.len() as u32;
-                // self.bullets_arr = bullets.as_ptr() as *mut Bullet;
-                // std::mem::forget(bullets); // prevent drop
             }
         }
     }
 
-    // pub fn filter(&mut self, f: impl Fn(&Entity) -> bool) {
-    //     let turrets = self.turrets_mut().unwrap().to_vec();
-
-    //     let new_turrets = turrets
-    //         .into_iter()
-    //         .filter(|turret| f(&Entity::Turret(turret.clone())))
-    //         .collect::<Vec<Turret>>();
-    //     let new_turrets = std::mem::ManuallyDrop::new(new_turrets);
-    //     self.turrets_n = new_turrets.len() as u32;
-    //     self.turrets_arr = new_turrets.as_ptr() as *mut Turret;
-
-    //     let enemies = self.enemies_mut().unwrap().to_vec();
-    //     let new_enemies = enemies
-    //         .into_iter()
-    //         .filter(|enemy| f(&Entity::Enemy(enemy.clone())))
-    //         .collect::<Vec<Enemy>>();
-    //     let new_enemies = std::mem::ManuallyDrop::new(new_enemies);
-    //     self.enemies_n = new_enemies.len() as u32;
-    //     self.enemies_arr = new_enemies.as_ptr() as *mut Enemy;
-    // }
-
     pub fn filter_dead(&mut self) {
-        // let turrets = self.turrets_mut().unwrap().to_vec();
-        // let new_turrets = turrets
-        //     .into_iter()
-        //     .filter(|turret| (!turret.dead).into())
-        //     .collect::<Vec<Turret>>();
-        // let new_turrets = std::mem::ManuallyDrop::new(new_turrets);
-        // self.turrets_n = new_turrets.len() as u32;
-        // self.turrets_arr = new_turrets.as_ptr() as *mut Turret;
+        let dead_turrets: Vec<EntityId> = self
+            .turrets
+            .iter()
+            .filter(|turret| turret.dead.into())
+            .map(|turret| turret.id)
+            .collect();
+        let dead_enemies: Vec<EntityId> = self
+            .enemies
+            .iter()
+            .filter(|enemy| enemy.dead.into())
+            .map(|enemy| enemy.id)
+            .collect();
+        let dead_bullets: Vec<EntityId> = self
+            .bullets
+            .iter()
+            .filter(|bullet| bullet.dead.into())
+            .map(|bullet| bullet.id)
+            .collect();
+
         self.turrets.retain(|turret| (!turret.dead).into());
-
-        // let enemies = self.enemies_mut().unwrap().to_vec();
-        // let new_enemies = enemies
-        //     .into_iter()
-        //     .filter(|enemy| (!enemy.dead).into())
-        //     .collect::<Vec<Enemy>>();
-        // let new_enemies = std::mem::ManuallyDrop::new(new_enemies);
-        // self.enemies_n = new_enemies.len() as u32;
-        // self.enemies_arr = new_enemies.as_ptr() as *mut Enemy;
         self.enemies.retain(|enemy| (!enemy.dead).into());
-
-        // let bullets = self.bullets_mut().unwrap().to_vec();
-        // let new_bullets = bullets
-        //     .into_iter()
-        //     .filter(|bullet| (!bullet.dead).into())
-        //     .collect::<Vec<Bullet>>();
-        // let new_bullets = std::mem::ManuallyDrop::new(new_bullets);
-        // self.bullets_n = new_bullets.len() as u32;
-        // self.bullets_arr = new_bullets.as_ptr() as *mut Bullet;
         self.bullets.retain(|bullet| (!bullet.dead).into());
+
+        for id in dead_turrets {
+            self.ids.remove(&id);
+        }
+        for id in dead_enemies {
+            self.ids.remove(&id);
+        }
+        for id in dead_bullets {
+            self.ids.remove(&id);
+        }
     }
 
-    // pub fn turrets(&self) -> Option<&[Turret]> {
-    //     if self.turrets_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice =
-    //             unsafe { std::slice::from_raw_parts(self.turrets_arr, self.turrets_n as usize) };
-    //         Some(slice)
+    // pub fn get(&self, id: EntityId) -> Option<&Entity> {
+    //     if self.ids.contains(&id) {
+    //         for turret in self.turrets.iter() {
+    //             if turret.id == id {
+    //                 let entity: &Entity = turret.into();
+    //                 return Some(entity);
+    //             }
+    //         }
+    //         for enemy in self.enemies.iter() {
+    //             if enemy.id == id {
+    //                 let entity: &Entity = enemy.into();
+    //                 return Some(entity);
+    //             }
+    //         }
     //     }
+    //     None
     // }
 
-    // Slice of mutable references to turrets
-    // pub fn turrets_mut(&mut self) -> Option<&mut [Turret]> {
-    //     if self.turrets_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice = unsafe {
-    //             std::slice::from_raw_parts_mut(self.turrets_arr, self.turrets_n as usize)
-    //         };
-    //         Some(slice)
-    //     }
-    // }
-
-    // pub fn enemies(&self) -> Option<&[Enemy]> {
-    //     if self.enemies_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice =
-    //             unsafe { std::slice::from_raw_parts(self.enemies_arr, self.enemies_n as usize) };
-    //         Some(slice)
-    //     }
-    // }
-
-    // // Slice of mutable references to enemies
-    // pub fn enemies_mut(&mut self) -> Option<&mut [Enemy]> {
-    //     if self.enemies_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice = unsafe {
-    //             std::slice::from_raw_parts_mut(self.enemies_arr, self.enemies_n as usize)
-    //         };
-    //         Some(slice)
-    //     }
-    // }
-
-    // pub fn bullets(&self) -> Option<&[Bullet]> {
-    //     if self.bullets_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice =
-    //             unsafe { std::slice::from_raw_parts(self.bullets_arr, self.bullets_n as usize) };
-    //         Some(slice)
-    //     }
-    // }
-
-    // // Slice of mutable references to bullets
-    // pub fn bullets_mut(&mut self) -> Option<&mut [Bullet]> {
-    //     if self.bullets_arr.is_null() {
-    //         None
-    //     } else {
-    //         let slice = unsafe {
-    //             std::slice::from_raw_parts_mut(self.bullets_arr, self.bullets_n as usize)
-    //         };
-    //         Some(slice)
-    //     }
-    // }
-
-    pub fn get(&self, id: EntityId) -> Option<&Entity> {
-        if self.ids.contains(&id) {
-            for turret in self.turrets.iter() {
-                if turret.id == id {
-                    let entity: &Entity = turret.into();
-                    return Some(entity);
-                }
+    pub fn closest_enemy(&self, position: Vector2) -> Option<&Enemy> {
+        let mut closest = None;
+        let mut closest_dist = std::f32::MAX;
+        for enemy in self.enemies.iter() {
+            let dist = enemy.position.dist(&position);
+            if dist < closest_dist {
+                closest = Some(enemy.into());
+                closest_dist = dist;
             }
-            for enemy in self.enemies.iter() {
-                if enemy.id == id {
-                    let entity: &Entity = enemy.into();
-                    return Some(entity);
-                }
+        }
+        closest
+    }
+
+    pub fn get_enemy(&self, id: EntityId) -> Option<&Enemy> {
+        for enemy in self.enemies.iter() {
+            if enemy.id == id {
+                return Some(enemy);
             }
         }
         None

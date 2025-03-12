@@ -3,23 +3,24 @@ use crate::vec2::Vector2;
 use crate::u32_bool::Bool;
 use crate::webhacks;
 
-use raylib_wasm::{PINK, RAYWHITE};
+use raylib_wasm::{PINK, RAYWHITE, RED};
 
 use crate::entity_manager::{EntityId, HasId};
 use crate::State;
 use crate::ACTIVE_RADIUS;
+use crate::ALPHA_BEIGE;
 use crate::SPEED_ENEMY;
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
     // walk along the path until we reach the correct position
     let mut current_path_length = 0.0;
     for i in 1..path.len() {
-        let mut p1 = path[i - 1].clone();
+        let p1 = path[i - 1];
         let p2 = path[i];
         let segment_length = p1.dist(&p2);
         if current_path_length + segment_length >= path_pos {
             let segment_pos = (path_pos - current_path_length) / segment_length;
-            return *p1.lerp(&p2, segment_pos);
+            return p1.lerp(&p2, segment_pos);
         }
         current_path_length += segment_length;
     }
@@ -49,7 +50,8 @@ mod tests {
 
 pub struct EnemyUpdate {
     pub id: EntityId,
-    pub position: f32,
+    pub position: Vector2,
+    pub path_position: f32,
     pub dead: bool,
     pub damage_done: u32,
 }
@@ -59,6 +61,7 @@ impl From<&Enemy> for EnemyUpdate {
         Self {
             id: enemy.id,
             position: enemy.position,
+            path_position: enemy.path_position,
             dead: enemy.dead.into(),
             damage_done: 0,
         }
@@ -67,7 +70,8 @@ impl From<&Enemy> for EnemyUpdate {
 
 #[derive(Clone, Debug)]
 pub struct Enemy {
-    pub position: f32, // position along the path in pixels
+    pub position: Vector2,
+    pub path_position: f32, // position along the path in pixels
     pub health: f32,
 
     #[allow(unused)]
@@ -85,7 +89,8 @@ pub struct Enemy {
 impl Enemy {
     pub fn new(time: f32) -> Enemy {
         Enemy {
-            position: 0.0,
+            position: Vector2::zero(), // todo!
+            path_position: 0.0,
             health: 100.0,
             max_health: 100.0,
             spawn_time: time,
@@ -99,12 +104,17 @@ impl Enemy {
         let path_length = { state.path_length };
 
         let mut update = EnemyUpdate::from(self);
-        update.position += SPEED_ENEMY * state.dt();
+        update.path_position += SPEED_ENEMY * state.dt();
 
-        if update.position >= path_length {
+        if update.path_position >= path_length {
             update.dead = true;
             update.damage_done += 1;
         }
+
+        // Figure out the position along the path
+        let path = state.get_path();
+        update.position = path_pos_to_screen_pos(update.path_position, path);
+        // update.position.add(&Vector2::new(20.0, -20.0));
 
         update
     }
@@ -112,34 +122,27 @@ impl Enemy {
     pub fn apply(&mut self, update: &EnemyUpdate) {
         debug_assert_eq!(self.id, update.id);
         self.dead = update.dead.into();
+        self.path_position = update.path_position;
         self.position = update.position;
     }
 
-    pub fn draw_background(&self, _index: usize, _state: &State) {
-        // let path = state.get_path();
-        // let pos = self.screen_position(path);
-        // webhacks::draw_circle(pos, ACTIVE_RADIUS, ALPHA_BEIGE);
+    pub fn draw_background(&self, _index: usize, state: &State) {
+        webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
+
+        // draw debug dot at the position along the path
+        let path = state.get_path();
+        let path_screen_position = path_pos_to_screen_pos(self.path_position, path);
+        webhacks::draw_circle(path_screen_position, 0.5, RED);
     }
 
     pub fn draw_foreground(&self, _index: usize, state: &State) {
-        let path = state.get_path();
-        let pos = self.screen_position(path);
-        // let distances = state.get_distances();
-
-        //
-        let distance = self
-            .screen_position(state.get_path())
-            .dist(&state.mouse_pos);
+        let distance = self.position.dist(&state.mouse_pos);
         let color = if distance < ACTIVE_RADIUS {
             PINK
         } else {
             RAYWHITE
         };
-        webhacks::draw_circle(pos, 10.0, color);
-    }
-
-    pub fn screen_position(&self, path: &[Vector2]) -> Vector2 {
-        path_pos_to_screen_pos(self.position, path)
+        webhacks::draw_circle(self.position, 10.0, color);
     }
 }
 

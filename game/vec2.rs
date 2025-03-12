@@ -64,72 +64,56 @@ impl Vector2 {
         self.mag2().sqrt()
     }
 
-    pub fn normalize(&mut self) -> &mut Self {
+    pub fn normalize(&self) -> Vector2 {
         let mag = self.mag();
         if mag == 0.0 {
-            self.x = 0.0;
-            self.y = 0.0;
+            Vector2::zero()
         } else {
-            self.x /= mag;
-            self.y /= mag;
+            Vector2::new(self.x / mag, self.y / mag)
         }
-        self
     }
 
-    pub fn adds(&mut self, other: f32) -> &mut Self {
-        self.x += other;
-        self.y += other;
-        self
-    }
+    // pub fn adds(&self, other: f32) -> Vector2 {
+    //     Vector2::new(self.x + other, self.y + other)
+    // }
 
-    pub fn add(&mut self, other: &Vector2) -> &mut Self {
-        self.x += other.x;
-        self.y += other.y;
-        self
-    }
+    // pub fn add(&self, other: &Vector2) -> Vector2 {
+    //     Vector2::new(self.x + other.x, self.y + other.y)
+    // }
 
-    pub fn subs(&mut self, other: f32) -> &mut Self {
-        self.adds(-other)
-    }
+    // pub fn subs(&self, other: f32) -> Vector2 {
+    //     Vector2::new(self.x - other, self.y - other)
+    // }
 
-    pub fn sub(&mut self, other: &Vector2) -> &mut Self {
-        self.x -= other.x;
-        self.y -= other.y;
-        self
-    }
+    // pub fn sub(&self, other: &Vector2) -> Vector2 {
+    //     Vector2::new(self.x - other.x, self.y - other.y)
+    // }
 
-    pub fn muls(&mut self, other: f32) -> &mut Self {
-        self.x *= other;
-        self.y *= other;
-        self
-    }
+    // pub fn muls(&self, other: f32) -> Vector2 {
+    //     Vector2::new(self.x * other, self.y * other)
+    // }
 
-    pub fn mul(&mut self, other: &Vector2) -> &mut Self {
-        self.x *= other.x;
-        self.y *= other.y;
-        self
-    }
+    // pub fn mul(&self, other: &Vector2) -> Vector2 {
+    //     Vector2::new(self.x * other.x, self.y * other.y)
+    // }
 
-    pub fn divs(&mut self, other: f32) -> &mut Self {
-        self.x /= other;
-        self.y /= other;
-        self
-    }
+    // pub fn divs(&self, other: f32) -> Vector2 {
+    //     Vector2::new(self.x / other, self.y / other)
+    // }
 
-    pub fn div(&mut self, other: &Vector2) -> &mut Self {
-        self.x /= other.x;
-        self.y /= other.y;
-        self
-    }
+    // pub fn div(&self, other: &Vector2) -> Vector2 {
+    //     Vector2::new(self.x / other.x, self.y / other.y)
+    // }
 
     pub fn dot(&self, other: &Vector2) -> f32 {
         self.x * other.x + self.y * other.y
     }
 
-    pub fn lerp(&mut self, other: &Vector2, t: f32) -> &mut Self {
-        let mut temp = other.clone();
-        self.muls(1.0 - t).add(temp.muls(t));
-        self
+    pub fn lerp(&self, other: &Vector2, t: f32) -> Vector2 {
+        Vector2::new(
+            self.x * (1.0 - t) + other.x * t,
+            self.y * (1.0 - t) + other.y * t,
+        )
     }
 }
 
@@ -167,5 +151,137 @@ use std::default::Default;
 impl Default for Vector2 {
     fn default() -> Self {
         Vector2::zero()
+    }
+}
+
+// `AddAssign<&mut vec2::Vector2>
+
+// use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+
+impl std::ops::Add<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn add(self, other: Vector2) -> Vector2 {
+        Vector2::new(self.x + other.x, self.y + other.y)
+    }
+}
+
+impl std::ops::Add<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn add(self, other: f32) -> Vector2 {
+        Vector2::new(self.x + other, self.y + other)
+    }
+}
+
+impl std::ops::AddAssign<Vector2> for Vector2 {
+    fn add_assign(&mut self, other: Vector2) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
+
+impl std::ops::AddAssign<f32> for Vector2 {
+    fn add_assign(&mut self, other: f32) {
+        self.x += other;
+        self.y += other;
+    }
+}
+
+impl std::ops::Sub<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn sub(self, other: Vector2) -> Vector2 {
+        Vector2::new(self.x - other.x, self.y - other.y)
+    }
+}
+
+impl std::ops::Sub<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn sub(self, other: f32) -> Vector2 {
+        Vector2::new(self.x - other, self.y - other)
+    }
+}
+
+impl std::ops::SubAssign<Vector2> for Vector2 {
+    fn sub_assign(&mut self, other: Vector2) {
+        self.x -= other.x;
+        self.y -= other.y;
+    }
+}
+
+impl std::ops::SubAssign<f32> for Vector2 {
+    fn sub_assign(&mut self, other: f32) {
+        self.x -= other;
+        self.y -= other;
+    }
+}
+
+impl std::ops::Mul<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn mul(self, other: Vector2) -> Vector2 {
+        Vector2::new(self.x * other.x, self.y * other.y)
+    }
+}
+
+impl std::ops::Mul<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn mul(self, other: f32) -> Vector2 {
+        Vector2::new(self.x * other, self.y * other)
+    }
+}
+
+impl std::ops::MulAssign<Vector2> for Vector2 {
+    fn mul_assign(&mut self, other: Vector2) {
+        self.x *= other.x;
+        self.y *= other.y;
+    }
+}
+
+impl std::ops::MulAssign<f32> for Vector2 {
+    fn mul_assign(&mut self, other: f32) {
+        self.x *= other;
+        self.y *= other;
+    }
+}
+
+impl std::ops::Div<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn div(self, other: Vector2) -> Vector2 {
+        Vector2::new(self.x / other.x, self.y / other.y)
+    }
+}
+
+impl std::ops::Div<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn div(self, other: f32) -> Vector2 {
+        Vector2::new(self.x / other, self.y / other)
+    }
+}
+
+impl std::ops::DivAssign<Vector2> for Vector2 {
+    fn div_assign(&mut self, other: Vector2) {
+        self.x /= other.x;
+        self.y /= other.y;
+    }
+}
+
+impl std::ops::DivAssign<f32> for Vector2 {
+    fn div_assign(&mut self, other: f32) {
+        self.x /= other;
+        self.y /= other;
+    }
+}
+
+impl std::ops::Neg for Vector2 {
+    type Output = Vector2;
+
+    fn neg(self) -> Vector2 {
+        Vector2::new(-self.x, -self.y)
     }
 }
