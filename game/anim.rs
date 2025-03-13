@@ -1,28 +1,7 @@
 use crate::defer;
+use crate::vec2::Vector2;
 use crate::webhacks;
 use raylib_wasm::{self as raylib, Color};
-
-////////////////////////
-
-// #[allow(unused)]
-// pub fn index_blobs(blobs: &*const Blob, index: usize) -> Blob {
-//     return unsafe { *blobs.wrapping_add(index) };
-// }
-
-// pub fn null_blobs() -> *const Blob {
-//     return std::ptr::null();
-// }
-
-// pub fn parse_anim(image: webhacks::Image) -> (*const Blob, usize) {
-//     let vec_blobs = find_blobs(image);
-//     let num = vec_blobs.len();
-
-//     let blobs = vec_blobs.as_ptr();
-
-//     return (blobs, num);
-// }
-
-////////////////////////
 
 const MAGENTA: Color = Color {
     r: 255,
@@ -234,4 +213,137 @@ pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
     });
 
     return blobs;
+}
+
+#[derive(Debug, Clone)]
+pub struct Anim {
+    pub image: webhacks::Image,
+    pub texture: webhacks::Texture,
+    pub blobs: Vec<Blob>,
+    pub meta: AnimMeta,
+}
+
+#[derive(Debug, Clone)]
+struct AnimMeta {
+    pub num_frames: usize,
+    pub max_width: usize,
+    pub max_height: usize,
+    pub avg_width: f32,
+    pub avg_height: f32,
+}
+
+impl Anim {
+    pub fn new(image: webhacks::Image) -> Anim {
+        return Anim {
+            image: image,
+            texture: webhacks::null_texture(),
+            blobs: vec![],
+            meta: AnimMeta {
+                num_frames: 0,
+                max_width: 0,
+                max_height: 0,
+                avg_width: 0.0,
+                avg_height: 0.0,
+            },
+        };
+    }
+}
+
+impl Anim {
+    pub fn load_texture(&mut self) {
+        if !webhacks::is_texture_loaded(self.texture) {
+            self.texture = webhacks::load_texture_from_image(self.image);
+        }
+    }
+
+    pub fn find_blobs(&mut self) {
+        self.blobs = find_blobs(self.image);
+        // self.num_frames = self.blobs.len();
+        // self.max_width = self.blobs.iter().map(|b| b.width()).max().unwrap_or(0);
+        // self.max_height = self.blobs.iter().map(|b| b.height()).max().unwrap_or(0);
+
+        self.meta.num_frames = self.blobs.len();
+        for blob in &self.blobs {
+            self.meta.max_width = self.meta.max_width.max(blob.width());
+            self.meta.max_height = self.meta.max_height.max(blob.height());
+            self.meta.avg_width += blob.width() as f32;
+            self.meta.avg_height += blob.height() as f32;
+        }
+        self.meta.avg_width /= self.meta.num_frames as f32;
+        self.meta.avg_height /= self.meta.num_frames as f32;
+    }
+
+    pub fn unload_image(&mut self) {
+        if webhacks::is_image_loaded(self.image) {
+            webhacks::unload_image(self.image);
+            self.image = webhacks::null_image();
+        }
+    }
+
+    pub fn draw(&self, position: Vector2, time: f32) {
+        draw_at_position(
+            position,
+            &self.blobs,
+            self.texture,
+            time,
+            1.0,
+            Anchor::TopLeft,
+        );
+    }
+
+    pub fn draw_like_circle(&self, position: Vector2, radius: f32, time: f32) {
+        let scale = (2.0 * radius) / (self.meta.avg_width).max(self.meta.avg_height);
+        println!("scale: {}", scale);
+        draw_at_position(
+            position,
+            &self.blobs,
+            self.texture,
+            time,
+            scale,
+            Anchor::Center,
+        );
+    }
+}
+
+fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> usize {
+    ((time / frame_duration) as u32 % n_frames) as usize
+}
+
+pub enum Anchor {
+    Center,
+    TopLeft,
+}
+
+fn draw_at_position(
+    position: Vector2,
+    anim_blobs: &[Blob],
+    texture: webhacks::Texture,
+    time: f32,
+    scale: f32,
+    anchor: Anchor,
+) {
+    let frame = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
+
+    let blob = anim_blobs[frame];
+    let source = blob.to_rect();
+    let width = blob.width() as f32 * scale;
+    let height = blob.height() as f32 * scale;
+
+    let dest = match anchor {
+        Anchor::Center => raylib::Rectangle {
+            x: position.x - width / 2.0,
+            y: position.y - height / 2.0,
+            width: width,
+            height: height,
+        },
+        Anchor::TopLeft => raylib::Rectangle {
+            x: position.x,
+            y: position.y,
+            width: width,
+            height: height,
+        },
+    };
+
+    webhacks::draw_texture_pro(texture, source, dest);
+    // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
 }
