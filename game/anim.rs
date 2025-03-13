@@ -293,7 +293,6 @@ impl Anim {
 
     pub fn draw_like_circle(&self, position: Vector2, radius: f32, time: f32) {
         let scale = (2.0 * radius) / (self.meta.avg_width).max(self.meta.avg_height);
-        println!("scale: {}", scale);
         draw_at_position(
             position,
             &self.blobs,
