@@ -18,6 +18,7 @@ pub struct BulletUpdate {
     pub dead: bool,
     pub position: Vector2,
     pub velocity: Vector2,
+    pub hit_request: Option<HitRequest>,
 }
 
 impl From<&Bullet> for BulletUpdate {
@@ -27,6 +28,21 @@ impl From<&Bullet> for BulletUpdate {
             dead: bullet.dead.into(),
             position: bullet.position,
             velocity: bullet.velocity,
+            hit_request: None,
+        }
+    }
+}
+
+pub struct HitRequest {
+    pub target: EntityId,
+    pub damage: u32,
+}
+
+impl From<&Bullet> for HitRequest {
+    fn from(bullet: &Bullet) -> Self {
+        HitRequest {
+            target: bullet.target,
+            damage: bullet.damage,
         }
     }
 }
@@ -39,6 +55,7 @@ pub struct Bullet {
     pub target: EntityId,
     pub dead: Bool,
     pub id: EntityId,
+    pub damage: u32,
 }
 
 impl Bullet {
@@ -49,6 +66,7 @@ impl Bullet {
             source: source,
             target: target.unwrap_or(NO_ID),
             dead: false.into(),
+            damage: 1,
             id: NO_ID,
         }
     }
@@ -58,16 +76,21 @@ impl Bullet {
 
         let mut update = BulletUpdate::from(self);
 
-        let direction = state
-            .man
-            .get_enemy(self.target)
-            .map(|target| target.position - self.position);
+        let target: Option<(Vector2, f32)> = state.man.get_enemy(self.target).map(|enemy| {
+            let direction = enemy.position - self.position;
+            (direction, enemy.radius)
+        });
 
-        match direction {
-            Some(direction) => {
+        match target {
+            Some((direction, radius)) => {
                 let velocity = direction.normalize() * SPEED_BULLET;
                 update.velocity = velocity;
                 update.position += velocity * dt;
+
+                if direction.mag() < radius {
+                    update.hit_request = Some(HitRequest::from(self));
+                    update.dead = true;
+                }
             }
             None => {
                 update.dead = true;
@@ -102,7 +125,7 @@ impl Bullet {
         // webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _index: usize, _state: &State) {
+    pub fn draw_foreground(&self, _state: &State) {
         // let radius = if self.hover.into() {
         //     TURRET_RADIUS * 1.5
         // } else {

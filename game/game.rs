@@ -64,9 +64,10 @@ pub struct State {
     pub music: webhacks::Music,
     pub font: webhacks::Font,
     pub image: webhacks::Image,
-    pub texture: webhacks::Texture,
-    pub anim_blobs_n: u32,
-    pub anim_blobs_arr: *const anim::Blob,
+    // pub texture: webhacks::Texture,
+    // pub anim_blobs_n: u32,
+    // pub anim_blobs_arr: *const anim::Blob,
+    pub slime_anim: anim::Anim,
     pub path_n: u32,
     pub path_arr: *const Vector2,
     pub path_length: f32,
@@ -126,7 +127,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
 
 fn make_initial_turrets(man: &mut EntityManager) {
     let t1 = Turret::new(Vector2::new(200.0, 150.0));
-    let t2 = Turret::new(Vector2::new(400.0, 150.0));
+    let t2 = Turret::new(Vector2::new(400.0, 180.0));
     man.add(Entity::Turret(t1));
     man.add(Entity::Turret(t2));
 }
@@ -160,7 +161,6 @@ pub fn game_init() -> State {
     webhacks::play_music_stream(music);
 
     let font = webhacks::load_font("assets/Kavoon-Regular.ttf");
-    let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
 
     let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(&path_points);
@@ -168,6 +168,9 @@ pub fn game_init() -> State {
     let mut man = EntityManager::new();
 
     make_initial_turrets(&mut man);
+
+    let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
+    let slime_anim = anim::Anim::new(image);
 
     State {
         all_loaded: false.into(),
@@ -181,9 +184,7 @@ pub fn game_init() -> State {
         music: music,
         font: font,
         image: image,
-        texture: webhacks::null_texture(),
-        anim_blobs_n: 0,
-        anim_blobs_arr: std::ptr::null(),
+        slime_anim: slime_anim,
         path_n: path_n,
         path_arr: path_arr,
         path_length: path_length,
@@ -258,17 +259,15 @@ pub fn game_load(_state: *mut State) {
     }
 
     // check if the image is loaded
-    if !webhacks::is_image_loaded(state.image) {
+    if !webhacks::is_image_loaded(state.slime_anim.image) {
         any_not_loaded = true;
     } else {
-        // image is loaded! let's load the texture
+        // slime_anim image is loaded! let's load the texture
         // state.texture = webhacks::load_texture_from_image(state.image);
 
-        if !webhacks::is_texture_loaded(state.texture) {
-            state.texture = webhacks::load_texture_from_image(state.image);
-        }
+        state.slime_anim.load_texture();
 
-        if !webhacks::is_texture_loaded(state.texture) {
+        if !webhacks::is_texture_loaded(state.slime_anim.texture) {
             any_not_loaded = true;
         }
     }
@@ -278,13 +277,15 @@ pub fn game_load(_state: *mut State) {
 
         // Once we've determined that init/load is done, we can unload some resources
 
-        let blobs = anim::find_blobs(state.image);
-        let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
+        state.slime_anim.find_blobs();
+        // let blobs = anim::find_blobs(state.image);
+        // let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
+        //
+        // state.anim_blobs_arr = anim_blobs_arr;
+        // state.anim_blobs_n = anim_blobs_n;
 
-        state.anim_blobs_arr = anim_blobs_arr;
-        state.anim_blobs_n = anim_blobs_n;
-
-        webhacks::unload_image(state.image); // we don't need the image anymore
+        // webhacks::unload_image(state.image); // we don't need the image anymore
+        state.slime_anim.unload_image();
 
         if state.mute.into() {
             webhacks::set_music_volume(state.music, 0.0);
@@ -292,10 +293,13 @@ pub fn game_load(_state: *mut State) {
             webhacks::set_music_volume(state.music, 1.0);
         }
 
-        let texture_shape = webhacks::get_texture_shape(state.texture);
-        webhacks::log(
-            -1,
-            format!("texture shape: [{}, {}]", texture_shape.x, texture_shape.y).as_str(),
+        let texture_shape = webhacks::get_texture_shape(state.slime_anim.texture);
+        log::info(
+            format!(
+                "slime texture shape: [{}, {}]",
+                texture_shape.x, texture_shape.y
+            )
+            .as_str(),
         );
     }
 
@@ -303,11 +307,6 @@ pub fn game_load(_state: *mut State) {
     unsafe {
         std::ptr::write(_state, state);
     }
-}
-
-fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> u32 {
-    let frame = (time / frame_duration) as u32 % n_frames;
-    frame
 }
 
 struct HandleKeysUpdate {
@@ -406,32 +405,6 @@ fn handle_mouse(state: &State) -> HandleMouseUpdate {
     update
 }
 
-fn draw_slime_at_pos(
-    position: Vector2,
-    anim_blobs: &[anim::Blob],
-    texture: webhacks::Texture,
-    time: f32,
-) {
-    let scale = 5.0;
-    let i = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
-
-    let blob = anim_blobs[i as usize];
-    let source = blob.to_rect();
-    let width = blob.width() as f32 * scale;
-    let height = blob.height() as f32 * scale;
-    webhacks::draw_texture_pro(
-        texture,
-        source,
-        Rectangle {
-            x: position.x - width / 2.0,
-            y: position.y - height,
-            width: width,
-            height: height,
-        },
-    );
-    // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
-}
-
 struct HandleEntitiesUpdate {
     life_lost: u32,
     new_enemies: Vec<Enemy>,
@@ -465,24 +438,19 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
 
         let last_enemy = { state.man.enemies.last().cloned() };
 
-        let mut new_enemies = vec![];
-        match last_enemy {
+        if match last_enemy {
             Some(Enemy {
                 spawn_time: last_spawn_time,
                 ..
-            }) if curr_time - last_spawn_time > SPAWN_INTERVAL => {
-                // let state = state.borrow();
-                // let mut man = state.man.borrow_mut();
-                // man.add(Enemy::new(curr_time).into());
-                new_enemies.push(Enemy::new(curr_time).into());
-            }
-            None => {
-                // no enemies
-                new_enemies.push(Enemy::new(curr_time).into());
-            }
-            _ => {}
+            }) if curr_time - last_spawn_time > SPAWN_INTERVAL => true,
+
+            None => true,
+            _ => false,
+        } {
+            let mut new_enemy = Enemy::new(curr_time);
+            new_enemy.anim = Some(state.slime_anim.clone());
+            update.new_enemies.push(new_enemy.into());
         }
-        update.new_enemies = new_enemies;
     }
 
     {
@@ -509,6 +477,15 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             .iter()
             .map(|bullet| bullet.update(state))
             .collect::<Vec<_>>();
+
+        // update.hit_requests = update
+        //     .bullet_updates
+        //     .iter()
+        //     .filter_map(|update| match &update.hit_request {
+        //         Some(hit_request) => Some(hit_request.clone()),
+        //         None => None,
+        //     })
+        //     .collect::<Vec<_>>();
     }
 
     {
@@ -536,6 +513,8 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             })
             .collect::<Vec<_>>();
 
+        // TODO: Should handle this better
+
         // Check whether any turrets are dead
         let any_dead = update
             .turret_updates
@@ -553,6 +532,7 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
 fn apply_entities_update(state: &mut State, update: HandleEntitiesUpdate) {
     state.life -= update.life_lost;
 
+    // Apply self updates to all entities
     std::iter::Iterator::zip(state.man.enemies.iter_mut(), update.enemy_updates.iter())
         .for_each(|(enemy, update)| enemy.apply(update));
 
@@ -562,6 +542,23 @@ fn apply_entities_update(state: &mut State, update: HandleEntitiesUpdate) {
     std::iter::Iterator::zip(state.man.turrets.iter_mut(), update.turret_updates.iter())
         .for_each(|(turret, update)| turret.apply(update));
 
+    // Handle interactions between entities
+    let hit_requests = update.bullet_updates.iter().filter_map(|update| {
+        if let Some(hit_request) = &update.hit_request {
+            Some(hit_request)
+        } else {
+            None
+        }
+    });
+
+    for hit_request in hit_requests {
+        let target = state.man.get_enemy_mut(hit_request.target);
+        if let Some(target) = target {
+            target.hit(hit_request.damage);
+        }
+    }
+
+    // Spawn new entities
     update
         .new_enemies
         .into_iter()
@@ -601,11 +598,11 @@ fn draw_entities_background(state: &State) {
         }
     }
 
-    for (i, enemy) in state.man.enemies.iter().enumerate() {
-        enemy.draw_background(i, state);
+    for enemy in state.man.enemies.iter() {
+        enemy.draw_background(state);
     }
-    for (i, turret) in state.man.turrets.iter().enumerate() {
-        turret.draw_background(i, state);
+    for turret in state.man.turrets.iter() {
+        turret.draw_background(state);
     }
 
     for bullet in state.man.bullets.iter() {
@@ -614,14 +611,14 @@ fn draw_entities_background(state: &State) {
 }
 
 fn draw_entities_foreground(state: &State) {
-    for (i, enemy) in state.man.enemies.iter().enumerate() {
-        enemy.draw_foreground(i, state);
+    for enemy in state.man.enemies.iter() {
+        enemy.draw_foreground(state);
     }
-    for (i, turret) in state.man.turrets.iter().enumerate() {
-        turret.draw_foreground(i, state);
+    for turret in state.man.turrets.iter() {
+        turret.draw_foreground(state);
     }
-    for (i, bullet) in state.man.bullets.iter().enumerate() {
-        bullet.draw_foreground(i, state);
+    for bullet in state.man.bullets.iter() {
+        bullet.draw_foreground(state);
     }
 }
 
@@ -726,12 +723,13 @@ pub fn game_frame(state_ptr: *mut State) {
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        {
-            let anim_blobs = unsafe {
-                std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
-            };
-            draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
-        }
+        // {
+        //     let anim_blobs = unsafe {
+        //         std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
+        //     };
+        //     draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
+        // }
+        state.slime_anim.draw(state.slime_pos, state.curr_time);
 
         draw_text(&state);
         draw_entities_background(&state);

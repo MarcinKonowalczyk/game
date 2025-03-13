@@ -405,6 +405,9 @@ pub fn load_image(file_path: &str) -> Image {
 }
 
 pub fn is_music_loaded(#[allow(unused)] music: Music) -> bool {
+    if is_null_music(music) {
+        return false;
+    }
     #[cfg(feature = "web")]
     return unsafe { ffi::IsMusicLoaded(music) };
     #[cfg(feature = "native")]
@@ -412,6 +415,9 @@ pub fn is_music_loaded(#[allow(unused)] music: Music) -> bool {
 }
 
 pub fn is_font_loaded(#[allow(unused)] font: Font) -> bool {
+    if is_null_font(font) {
+        return false;
+    }
     #[cfg(feature = "web")]
     return unsafe { ffi::IsFontLoaded(font) };
     #[cfg(feature = "native")]
@@ -419,6 +425,9 @@ pub fn is_font_loaded(#[allow(unused)] font: Font) -> bool {
 }
 
 pub fn is_image_loaded(#[allow(unused)] image: Image) -> bool {
+    if is_null_image(image) {
+        return false;
+    }
     #[cfg(feature = "web")]
     return unsafe { ffi::IsImageLoaded(image) };
     #[cfg(feature = "native")]
@@ -427,6 +436,9 @@ pub fn is_image_loaded(#[allow(unused)] image: Image) -> bool {
 
 #[allow(unused)]
 pub fn is_texture_loaded(texture: Texture) -> bool {
+    if is_null_texture(texture) {
+        return false;
+    }
     #[cfg(feature = "web")]
     return unsafe { ffi::IsTextureLoaded(texture) };
     #[cfg(feature = "native")]
@@ -449,6 +461,14 @@ pub fn null_font() -> Font {
 }
 
 #[allow(unused)]
+pub fn is_null_font(font: Font) -> bool {
+    #[cfg(feature = "web")]
+    return font == 0;
+    #[cfg(feature = "native")]
+    return font.baseSize == 0;
+}
+
+#[allow(unused)]
 pub fn null_texture() -> Texture {
     #[cfg(feature = "web")]
     return 0;
@@ -460,6 +480,14 @@ pub fn null_texture() -> Texture {
         mipmaps: 0,
         format: 0,
     };
+}
+
+#[allow(unused)]
+pub fn is_null_texture(texture: Texture) -> bool {
+    #[cfg(feature = "web")]
+    return texture == 0;
+    #[cfg(feature = "native")]
+    return texture.id == 0;
 }
 
 #[allow(unused)]
@@ -483,6 +511,14 @@ pub fn null_music() -> Music {
 }
 
 #[allow(unused)]
+pub fn is_null_music(music: Music) -> bool {
+    #[cfg(feature = "web")]
+    return music == 0;
+    #[cfg(feature = "native")]
+    return music.stream.buffer == std::ptr::null_mut();
+}
+
+#[allow(unused)]
 pub fn null_image() -> Image {
     #[cfg(feature = "web")]
     return 0;
@@ -494,6 +530,14 @@ pub fn null_image() -> Image {
         mipmaps: 0,
         format: 0,
     };
+}
+
+#[allow(unused)]
+pub fn is_null_image(image: Image) -> bool {
+    #[cfg(feature = "web")]
+    return image == 0;
+    #[cfg(feature = "native")]
+    return image.data == std::ptr::null_mut();
 }
 
 pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color: Color) {

@@ -45,16 +45,6 @@ pub enum Entity {
     Bullet(Bullet),
 }
 
-// impl Entity {
-//     pub fn downcast_ref<T>(&self) -> &T {
-//         match self {
-//             Entity::Turret(turret) => unsafe { std::mem::transmute(turret) },
-//             Entity::Enemy(enemy) => unsafe { std::mem::transmute(enemy) },
-//             Entity::Bullet(bullet) => unsafe { std::mem::transmute(bullet) },
-//         }
-//     }
-// }
-
 impl HasId for Entity {
     fn id(&self) -> EntityId {
         match self {
@@ -294,24 +284,6 @@ impl EntityManager {
         }
     }
 
-    // pub fn get(&self, id: EntityId) -> Option<&Entity> {
-    //     if self.ids.contains(&id) {
-    //         for turret in self.turrets.iter() {
-    //             if turret.id == id {
-    //                 let entity: &Entity = turret.into();
-    //                 return Some(entity);
-    //             }
-    //         }
-    //         for enemy in self.enemies.iter() {
-    //             if enemy.id == id {
-    //                 let entity: &Entity = enemy.into();
-    //                 return Some(entity);
-    //             }
-    //         }
-    //     }
-    //     None
-    // }
-
     pub fn closest_enemy(&self, position: Vector2) -> Option<&Enemy> {
         let mut closest = None;
         let mut closest_dist = std::f32::MAX;
@@ -327,6 +299,15 @@ impl EntityManager {
 
     pub fn get_enemy(&self, id: EntityId) -> Option<&Enemy> {
         for enemy in self.enemies.iter() {
+            if enemy.id == id {
+                return Some(enemy);
+            }
+        }
+        None
+    }
+
+    pub fn get_enemy_mut(&mut self, id: EntityId) -> Option<&mut Enemy> {
+        for enemy in self.enemies.iter_mut() {
             if enemy.id == id {
                 return Some(enemy);
             }
