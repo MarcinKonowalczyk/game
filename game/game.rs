@@ -1,7 +1,7 @@
 // #![deny(unused_results)]
 
 use entity_manager::{Entity, EntityManager};
-use raylib::{KeyboardKey as KEY, MouseButton, Rectangle, RAYWHITE};
+use raylib::{KeyboardKey as KEY, MouseButton, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
 use u32_bool::Bool;
 
@@ -723,16 +723,9 @@ pub fn game_frame(state_ptr: *mut State) {
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        // {
-        //     let anim_blobs = unsafe {
-        //         std::slice::from_raw_parts(state.anim_blobs_arr, state.anim_blobs_n as usize)
-        //     };
-        //     draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
-        // }
-
         state.slime_anim.draw(
             state.slime_pos,
-            10.0,
+            5.0,
             anim::Anchor::BottomCenter,
             state.curr_time,
         );

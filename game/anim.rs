@@ -1,6 +1,10 @@
+use std::vec;
+
+use crate::anim;
 use crate::defer;
 use crate::vec2::Vector2;
 use crate::webhacks;
+
 use raylib_wasm::{self as raylib, Color};
 
 const MAGENTA: Color = Color {
@@ -25,21 +29,27 @@ pub struct Blob {
 
 impl Blob {
     pub fn width(&self) -> usize {
-        return (self.x_max - self.x_min + 1) as usize;
+        (self.x_max - self.x_min + 1) as usize
     }
 
     pub fn height(&self) -> usize {
-        return (self.y_max - self.y_min + 1) as usize;
+        (self.y_max - self.y_min + 1) as usize
     }
 
     pub fn to_rect(&self) -> raylib::Rectangle {
-        return raylib::Rectangle {
+        raylib::Rectangle {
             x: self.x_min as f32,
             y: self.y_min as f32,
             width: self.width() as f32,
             height: self.height() as f32,
-        };
+        }
     }
+}
+
+pub struct Metablob {
+    pad_blob: u32,
+    #[allow(dead_code)]
+    anchor: anim::Anchor,
 }
 
 struct FindBlobsData {
@@ -140,14 +150,86 @@ impl FindBlobsData {
     }
 }
 
-pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
+const MAGIC: u8 = 0b10101010;
+
+enum MetablobPixel {
+    Black,
+    White,
+    Transparent,
+    Wrong,
+}
+
+fn metablob_pixel_sorter(color: Color) -> MetablobPixel {
+    if color.a == 0 {
+        return MetablobPixel::Transparent;
+    }
+    if color.r == 0 && color.g == 0 && color.b == 0 {
+        return MetablobPixel::Black;
+    }
+    if color.r == 255 && color.g == 255 && color.b == 255 {
+        return MetablobPixel::White;
+    }
+    return MetablobPixel::Wrong;
+}
+
+fn try_parse_as_metablob(dat: &FindBlobsData, blob: &Blob) -> Option<Metablob> {
+    let mut bdat = vec![];
+    for y in blob.y_min..=blob.y_max {
+        for x in blob.x_min..=blob.x_max {
+            let color = dat.at(x as usize, y as usize);
+            bdat.push(match metablob_pixel_sorter(color) {
+                MetablobPixel::Black => false,
+                MetablobPixel::White => true,
+                MetablobPixel::Transparent => continue, // ignore transparent pixels
+                MetablobPixel::Wrong => return None,    // not a metablob
+            });
+        }
+    }
+
+    // convert the bools to bytes
+    let bdat = bdat
+        .chunks(8)
+        .map(|chunk| {
+            let mut byte = 0;
+            for (i, &bit) in chunk.iter().enumerate() {
+                if bit {
+                    byte |= 1 << i;
+                }
+            }
+            byte
+        })
+        .collect::<Vec<u8>>();
+
+    if bdat.len() < 1 || bdat[0] != MAGIC {
+        return None;
+    }
+
+    // read data length (two bytes, big endian)
+    let data_len = u16::from_be_bytes([bdat[1], bdat[2]]) as usize;
+
+    if data_len + 3 > bdat.len() {
+        // invalid data length
+        return None;
+    }
+
+    let pad_blob = bdat[3] as u32;
+    let anchor = Anchor::TopLeft;
+
+    // Anchor is not implemented yet. just ignore it
+    let _anchor: Result<anim::Anchor, ()> = bdat[1].try_into();
+
+    Some(Metablob { pad_blob, anchor })
+}
+
+pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
     let mut blobs = Vec::new();
+    let mut metablob = None;
     let width = webhacks::get_image_width(image);
     let height = webhacks::get_image_height(image);
-    // webhacks::log(format!("Image size: {} x {}", width, height));
+
     if width <= 2 || height <= 2 {
         // Texture too small. Definitely not a sprite sheet. Return empty list.
-        return blobs;
+        return (blobs, metablob);
     }
 
     let mut dat = FindBlobsData::from_image(image);
@@ -193,16 +275,27 @@ pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
                 dat.append_neighbours(x, y);
             }
 
-            blobs.push(blob);
+            match try_parse_as_metablob(&dat, &blob) {
+                Some(new_metablob) => metablob = Some(new_metablob),
+                None => blobs.push(blob),
+            }
         }
     }
 
-    for (i, blob) in blobs.iter().enumerate() {
-        println!(
-            "Blob {} at ({}, {}) to ({}, {})",
-            i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
-        );
-    }
+    // Shrink the blobs to remove any 1-pixel border
+    // for blob in &mut blobs {
+    //     blob.x_min += 2;
+    //     blob.y_min += 2;
+    //     blob.x_max -= 2;
+    //     blob.y_max -= 2;
+    // }
+
+    // for (i, blob) in blobs.iter().enumerate() {
+    //     println!(
+    //         "Blob {} at ({}, {}) to ({}, {})",
+    //         i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
+    //     );
+    // }
 
     // Sort the blobs by first y, then x
     blobs.sort_by(|a, b| {
@@ -212,7 +305,7 @@ pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
         return a.x_min.cmp(&b.x_min);
     });
 
-    return blobs;
+    return (blobs, metablob);
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +323,7 @@ pub struct AnimMeta {
     pub max_height: usize,
     pub avg_width: f32,
     pub avg_height: f32,
+    pub pad_blob: u32,
 }
 
 impl Anim {
@@ -244,6 +338,7 @@ impl Anim {
                 max_height: 0,
                 avg_width: 0.0,
                 avg_height: 0.0,
+                pad_blob: 0,
             },
         };
     }
@@ -257,10 +352,9 @@ impl Anim {
     }
 
     pub fn find_blobs(&mut self) {
-        self.blobs = find_blobs(self.image);
-        // self.num_frames = self.blobs.len();
-        // self.max_width = self.blobs.iter().map(|b| b.width()).max().unwrap_or(0);
-        // self.max_height = self.blobs.iter().map(|b| b.height()).max().unwrap_or(0);
+        let (blobs, metablob) = find_blobs(self.image);
+
+        self.blobs = blobs;
 
         self.meta.num_frames = self.blobs.len();
         for blob in &self.blobs {
@@ -271,6 +365,10 @@ impl Anim {
         }
         self.meta.avg_width /= self.meta.num_frames as f32;
         self.meta.avg_height /= self.meta.num_frames as f32;
+
+        if let Some(metablob) = metablob {
+            self.meta.pad_blob = metablob.pad_blob;
+        }
     }
 
     pub fn unload_image(&mut self) {
@@ -281,7 +379,15 @@ impl Anim {
     }
 
     pub fn draw(&self, position: Vector2, scale: f32, anchor: Anchor, time: f32) {
-        draw_at_position(position, &self.blobs, self.texture, time, scale, anchor);
+        draw_at_position(
+            position,
+            &self.blobs,
+            self.texture,
+            time,
+            scale,
+            anchor,
+            self.meta.pad_blob,
+        );
     }
 }
 
@@ -306,6 +412,20 @@ impl Anchor {
     #[allow(non_upper_case_globals)]
     pub const Center: Anchor = Anchor::CenterCenter;
 }
+
+impl TryFrom<u8> for Anchor {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Anchor::TopLeft),
+            1 => Ok(Anchor::CenterCenter),
+            2 => Ok(Anchor::BottomCenter),
+            _ => Err(()),
+        }
+    }
+}
+
 fn draw_at_position(
     position: Vector2,
     anim_blobs: &[Blob],
@@ -313,11 +433,19 @@ fn draw_at_position(
     time: f32,
     scale: f32,
     anchor: Anchor,
+    pad_blob: u32,
 ) {
     let frame = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
 
     let blob = anim_blobs[frame];
-    let source = blob.to_rect();
+    let mut source = blob.to_rect();
+
+    // shrink the source rect by the padding
+    source.x += pad_blob as f32;
+    source.y += pad_blob as f32;
+    source.width -= pad_blob as f32 * 2.0;
+    source.height -= pad_blob as f32 * 2.0;
+
     let width = blob.width() as f32 * scale;
     let height = blob.height() as f32 * scale;
 

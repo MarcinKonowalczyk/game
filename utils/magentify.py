@@ -3,9 +3,9 @@
 from PIL import Image
 from PIL.Image import Resampling
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
-from typing import Literal
+from typing import Literal, ClassVar
 from enum import Enum
 
 __version__ = "0.1.1"
@@ -35,12 +35,25 @@ class Anchor(Enum):
     TOP_LEFT = "top-left"  # default, top
     TOP_CENTER = "top-center"
     TOP_RIGHT = "top-right"
-    LEFT_CENTER = "left-center"  # center-left
+    CENTER_LEFT = "left-center"  # center-left
     CENTER_CENTER = "center-center"  # center
-    RIGHT_CENTER = "right-center"  # center-right
+    CENTER_RIGHT = "right-center"  # center-right
     BOTTOM_LEFT = "bottom-left"
     BOTTOM_CENTER = "bottom-center"
     BOTTOM_RIGHT = "bottom-right"
+
+    def to_int(self) -> int:
+        return {
+            Anchor.TOP_LEFT: 0,
+            Anchor.TOP_CENTER: 1,
+            Anchor.TOP_RIGHT: 2,
+            Anchor.CENTER_LEFT: 3,
+            Anchor.CENTER_CENTER: 4,
+            Anchor.CENTER_RIGHT: 5,
+            Anchor.BOTTOM_LEFT: 6,
+            Anchor.BOTTOM_CENTER: 7,
+            Anchor.BOTTOM_RIGHT: 8,
+        }[self]
 
     @classmethod
     def coerce(cls, anchor: "Anchor | str") -> "Anchor":
@@ -62,9 +75,9 @@ class Anchor(Enum):
             ("left", "top"): Anchor.TOP_LEFT,
             ("center", "top"): Anchor.TOP_CENTER,
             ("right", "top"): Anchor.TOP_RIGHT,
-            ("center", "left"): Anchor.LEFT_CENTER,
+            ("center", "left"): Anchor.CENTER_LEFT,
             ("center", "center"): Anchor.CENTER_CENTER,
-            ("center", "right"): Anchor.RIGHT_CENTER,
+            ("center", "right"): Anchor.CENTER_RIGHT,
             ("bottom", "left"): Anchor.BOTTOM_LEFT,
             ("bottom", "center"): Anchor.BOTTOM_CENTER,
             ("bottom", "right"): Anchor.BOTTOM_RIGHT,
@@ -183,6 +196,86 @@ class Blob:
             slice(None),
         )
 
+@dataclass
+class Metablob:
+    width: int
+    height: int
+
+    l_pad: int = 0
+    r_pad: int = 0
+    t_pad: int = 0
+    b_pad: int = 0
+
+    data: bytes = field(default=b"", init=False)
+
+    MAGIC: ClassVar[bytes] = 0b10101010.to_bytes(1, "big")
+    META_LEN: ClassVar[int] = len(MAGIC) + 2  # magic length + data length
+
+    @property
+    def size(self) -> int:
+        return self.width * self.height
+
+    @property
+    def padded_width(self) -> int:
+        return self.width + self.l_pad + self.r_pad
+
+    @property
+    def padded_height(self) -> int:
+        return self.height + self.t_pad + self.b_pad
+
+    @classmethod
+    def from_available_space(cls, width: int, height: int, pad: int = 0) -> "Metablob":
+        return cls(width - 2 * pad, height - 2 * pad, pad, pad, pad, pad)
+
+    def __str__(self) -> str:
+        data = self.MAGIC + len(self.data).to_bytes(2, "big") + self.data
+        return f"Metablob({self.width}x{self.height}, size={self.size // 8}b, data={data!r})"
+
+    def __repr__(self) -> str:
+        return f"Metablob({self.width}, {self.height})"
+
+    def shrink(self) -> None:
+        shape = (int(self.width), int(self.height))
+        n_bits = (len(self.data) + self.META_LEN) * 8
+
+        while True:
+            wide = shape[0] > shape[1]
+            if wide:
+                new_shape = (shape[0] - 1, shape[1])
+            else:
+                new_shape = (shape[0], shape[1] - 1)
+
+            if new_shape[0] * new_shape[1] < n_bits:
+                break
+
+            shape = new_shape
+
+        self.width = shape[0]
+        self.height = shape[1]
+
+    def image_data(self) -> np.ndarray:
+        data = self.MAGIC + len(self.data).to_bytes(2, "big") + self.data
+
+        if len(data) > self.size // 8:
+            raise ValueError(
+                f"Data too large for metablob: {len(data)} > {self.size // 8}"
+            )
+
+        out = np.zeros((self.height, self.width, 4), dtype=np.uint8)
+        out[..., 3] = 255  # set all to 0
+
+        k, l = 0, 0
+        for b in data:
+            for i in range(8):
+                if b & (1 << i):
+                    out[k, l] = [255, 255, 255, 255]
+                l += 1
+                if l == self.width:
+                    l = 0
+                    k += 1
+
+        return out
+
 
 def find_blobs(image: Image.Image) -> tuple[list[Blob], np.ndarray | None]:
     """Find all disconnected blobs of pixels in an image.
@@ -273,6 +366,7 @@ def magentify(
     pad_blob: int = 1,  # padding inside the blobs
     anchor: Anchor | Literal["top", "bottom"] = "top",
     pad_height: PadHeight | Literal["none", "row"] = "none",
+    metadata: bool = False,
     verbose: bool = False,
     debug: bool = False,
 ) -> Image.Image:
@@ -321,12 +415,21 @@ def magentify(
                 raise BlobError(f"{b1} ({i}) and {b2} ({j}) overlap")
 
     # The blobs will be packed into an NxM grid
-    N = math.ceil(math.sqrt(len(blobs)))
-    M = math.ceil(len(blobs) / N)
-    assert N * M >= len(blobs)
+    I = len(blobs)
+    if metadata:
+        I += 1  # add a metadata blob
+
+    N = math.ceil(math.sqrt(I))
+    M = math.ceil(I / N)
+    assert N * M >= I
+
+    if metadata:
+        assert N * M >= I + 1
 
     if verbose:
         print(f"Packing {len(blobs)} blobs into a {N}x{M} grid")
+        if metadata:
+            print("Adding a metadata blob at the end")
 
     # Figure out the size of the output image
     # We need to know the widest and tallest blobs in each row and column
@@ -345,9 +448,14 @@ def magentify(
         if n == N:
             n, m = 0, m + 1
 
+    out_shape = (
+        sum(row_padded_heights) + (M + 1) * pad_magenta,
+        max(row_padded_widths) + (N + 1) * pad_magenta,
+    )
+
+    # Pad all blobs to the height of the tallest blob in the row. Hence
+    # all blobs will be as tall as the tallest blob in the row.
     if pad_height == "row":
-        # Pad all blobs to the height of the tallest blob in the row. Hence
-        # all blobs will be as tall as the tallest blob in the row.
         if anchor.is_bottom:
             n, m = 0, 0
             for i, b in enumerate(blobs):
@@ -379,11 +487,6 @@ def magentify(
     #     # Pad all blobs to the height of the tallest blob in the row. Hence
     #     # all blobs will be as tall as the tallest blob in the row.
     #     row_heights = np.full(M, max(row_heights))
-
-    out_shape = (
-        sum(row_padded_heights) + (M + 1) * pad_magenta,
-        max(row_padded_widths) + (N + 1) * pad_magenta,
-    )
 
     magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
 
@@ -418,7 +521,7 @@ def magentify(
         )
 
         if debug:
-            out_image_data[region] = np.array([0, 0, 255, 100])  # debug
+            out_image_data[region] = np.array([0, 0, 255, 128])  # debug
         else:
             out_image_data[region] = background
 
@@ -435,7 +538,7 @@ def magentify(
             out_image_data[k, l] = np.array([0, 0, 255, 255])
 
             if anchor.is_bottom:
-                out_image_data[kp, lp] = np.array([0, 128, 128, 255])
+                out_image_data[kp, lp] = np.array([0, 0, 255, 255])
 
         # Move the pixel cursor
         l += b.width + pad_magenta + b.l_pad + b.r_pad
@@ -447,8 +550,47 @@ def magentify(
             l = pad_magenta
             k += row_padded_heights[m - 1] + pad_magenta
 
-        if i == 9:
-            break
+    if metadata:
+        if debug:
+            out_image_data[k, l] = np.array([0, 0, 255, 255])  # debug
+
+        # Figure out metadata blob size
+        metablob = Metablob.from_available_space(
+            out_shape[1] - l - pad_magenta,
+            out_shape[0] - k - pad_magenta,
+            pad=pad_blob,
+        )
+
+        # for _ in range(10):
+        #     metablob.data += b"hello world"
+
+        metablob.data += pad_blob.to_bytes(1, "big")
+        metablob.data += anchor.to_int().to_bytes(1, "big")
+
+        metablob.shrink()
+
+        if verbose:
+            print("Adding metablob")
+            print(metablob)
+
+        # paste transparency into the entire *padded* metablob region
+        region = (
+            slice(k, k + metablob.padded_height),
+            slice(l, l + metablob.padded_width),
+            slice(None),
+        )
+
+        if debug:
+            out_image_data[region] = np.array([0, 0, 255, 128])  # debug
+        else:
+            out_image_data[region] = background
+
+        region = (
+            slice(k + metablob.t_pad, k + metablob.t_pad + metablob.height),
+            slice(l + metablob.l_pad, l + metablob.l_pad + metablob.width),
+            slice(None),
+        )
+        out_image_data[region] = metablob.image_data()
 
     return Image.fromarray(out_image_data, "RGBA")
 
@@ -514,6 +656,13 @@ def main() -> None:
         default=False,
     )
 
+    parser.add_argument(
+        "--metadata",
+        help="Add metadata to the output image.",
+        action="store_true",
+        default=False,
+    )
+
     parser.add_argument("input", help="Input image file.")
     parser.add_argument("output", help="Output image file.")
 
@@ -529,6 +678,7 @@ def main() -> None:
         pad_blob=args.pad_blob,
         debug=args.debug,
         verbose=args.verbose,
+        metadata=args.metadata,
     )
 
     if args.upscale > 1:
