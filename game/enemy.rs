@@ -145,7 +145,13 @@ impl Enemy {
         match self.anim {
             Some(ref anim) => {
                 // anim.draw(self.position, state.curr_time);
-                anim.draw_like_circle(self.position, self.radius, state.curr_time);
+                let scale = (2.0 * self.radius) / (anim.meta.avg_width).max(anim.meta.avg_height);
+                anim.draw(
+                    self.position,
+                    scale,
+                    crate::anim::Anchor::Center,
+                    state.curr_time,
+                );
             }
             None => {
                 let distance = self.position.dist(&state.mouse_pos);

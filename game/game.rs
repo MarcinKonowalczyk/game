@@ -729,7 +729,13 @@ pub fn game_frame(state_ptr: *mut State) {
         //     };
         //     draw_slime_at_pos(state.slime_pos, anim_blobs, state.texture, state.curr_time);
         // }
-        state.slime_anim.draw(state.slime_pos, state.curr_time);
+
+        state.slime_anim.draw(
+            state.slime_pos,
+            10.0,
+            anim::Anchor::BottomCenter,
+            state.curr_time,
+        );
 
         draw_text(&state);
         draw_entities_background(&state);

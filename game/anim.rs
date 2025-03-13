@@ -197,12 +197,12 @@ pub fn find_blobs(image: webhacks::Image) -> Vec<Blob> {
         }
     }
 
-    // for (i, blob) in blobs.iter().enumerate() {
-    //     println!(
-    //         "Blob {} at ({}, {}) to ({}, {})",
-    //         i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
-    //     );
-    // }
+    for (i, blob) in blobs.iter().enumerate() {
+        println!(
+            "Blob {} at ({}, {}) to ({}, {})",
+            i, blob.x_min, blob.y_min, blob.x_max, blob.y_max
+        );
+    }
 
     // Sort the blobs by first y, then x
     blobs.sort_by(|a, b| {
@@ -224,7 +224,7 @@ pub struct Anim {
 }
 
 #[derive(Debug, Clone)]
-struct AnimMeta {
+pub struct AnimMeta {
     pub num_frames: usize,
     pub max_width: usize,
     pub max_height: usize,
@@ -280,27 +280,8 @@ impl Anim {
         }
     }
 
-    pub fn draw(&self, position: Vector2, time: f32) {
-        draw_at_position(
-            position,
-            &self.blobs,
-            self.texture,
-            time,
-            1.0,
-            Anchor::TopLeft,
-        );
-    }
-
-    pub fn draw_like_circle(&self, position: Vector2, radius: f32, time: f32) {
-        let scale = (2.0 * radius) / (self.meta.avg_width).max(self.meta.avg_height);
-        draw_at_position(
-            position,
-            &self.blobs,
-            self.texture,
-            time,
-            scale,
-            Anchor::Center,
-        );
+    pub fn draw(&self, position: Vector2, scale: f32, anchor: Anchor, time: f32) {
+        draw_at_position(position, &self.blobs, self.texture, time, scale, anchor);
     }
 }
 
@@ -308,11 +289,23 @@ fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> usize {
     ((time / frame_duration) as u32 % n_frames) as usize
 }
 
+#[derive(PartialEq, Eq)]
 pub enum Anchor {
-    Center,
     TopLeft,
+    // TopCenter,
+    // TopRight,
+    // CenterLeft,
+    CenterCenter,
+    // CenterRight,
+    // BottomLeft,
+    BottomCenter,
+    // BottomRight,
 }
 
+impl Anchor {
+    #[allow(non_upper_case_globals)]
+    pub const Center: Anchor = Anchor::CenterCenter;
+}
 fn draw_at_position(
     position: Vector2,
     anim_blobs: &[Blob],
@@ -329,7 +322,7 @@ fn draw_at_position(
     let height = blob.height() as f32 * scale;
 
     let dest = match anchor {
-        Anchor::Center => raylib::Rectangle {
+        Anchor::CenterCenter => raylib::Rectangle {
             x: position.x - width / 2.0,
             y: position.y - height / 2.0,
             width: width,
@@ -338,6 +331,12 @@ fn draw_at_position(
         Anchor::TopLeft => raylib::Rectangle {
             x: position.x,
             y: position.y,
+            width: width,
+            height: height,
+        },
+        Anchor::BottomCenter => raylib::Rectangle {
+            x: position.x - width / 2.0,
+            y: position.y - height,
             width: width,
             height: height,
         },

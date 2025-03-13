@@ -108,7 +108,7 @@ class Anchor(Enum):
 class PadHeight(str, Enum):
     NONE = "none"
     ROW = "row"
-    ALL = "all"
+    # ALL = "all"
 
     @classmethod
     def coerce(cls, pad_height: "PadHeight | str") -> "PadHeight":
@@ -133,13 +133,26 @@ class Blob:
     max_x: int
     max_y: int
 
+    l_pad: int = 0
+    r_pad: int = 0
+    t_pad: int = 0
+    b_pad: int = 0
+
     @property
     def width(self) -> int:
-        return self.max_x - self.min_x + 1
+        return self.max_x - self.min_x + 1  # + self.l_pad + self.r_pad
 
     @property
     def height(self) -> int:
-        return self.max_y - self.min_y + 1
+        return self.max_y - self.min_y + 1  # + self.t_pad + self.b_pad
+
+    @property
+    def padded_width(self) -> int:
+        return self.width + self.l_pad + self.r_pad
+
+    @property
+    def padded_height(self) -> int:
+        return self.height + self.t_pad + self.b_pad
 
     def __str__(self) -> str:
         return f"Blob({self.width}x{self.height} @ {self.min_x},{self.min_y})"
@@ -153,6 +166,21 @@ class Blob:
             and self.max_x >= other.min_x
             and self.min_y <= other.max_y
             and self.max_y >= other.min_y
+        )
+
+    def add_pad(self, pad: int) -> None:
+        self.l_pad += pad
+        self.r_pad += pad
+        self.t_pad += pad
+        self.b_pad += pad
+
+    @property
+    def region(self) -> tuple[slice, slice, slice]:
+        # image[b.min_y : b.max_y + 1, b.min_x : b.max_x + 1, :]
+        return (
+            slice(self.min_y, self.max_y + 1),
+            slice(self.min_x, self.max_x + 1),
+            slice(None),
         )
 
 
@@ -241,10 +269,12 @@ def find_blobs(image: Image.Image) -> tuple[list[Blob], np.ndarray | None]:
 
 def magentify(
     image: Image.Image,
-    pad: int = 1,  # padding between blobs
+    pad_magenta: int = 1,  # padding between blobs
+    pad_blob: int = 1,  # padding inside the blobs
     anchor: Anchor | Literal["top", "bottom"] = "top",
-    pad_height: PadHeight | Literal["none", "row", "all"] = "none",
+    pad_height: PadHeight | Literal["none", "row"] = "none",
     verbose: bool = False,
+    debug: bool = False,
 ) -> Image.Image:
     anchor = Anchor.coerce(anchor)
     pad_height = PadHeight.coerce(pad_height)
@@ -259,6 +289,10 @@ def magentify(
         # Just use transparent background. This is relevant only to
         # the padding of the blobs anyway.
         background = np.zeros(4, dtype=np.uint8)
+
+    # Add padding inside the blobs
+    for b in blobs:
+        b.add_pad(pad_blob)
 
     # print all blobs
     if verbose:
@@ -296,31 +330,59 @@ def magentify(
 
     # Figure out the size of the output image
     # We need to know the widest and tallest blobs in each row and column
-    max_heights = np.zeros(M, dtype=int)
+    row_heights = np.zeros(M, dtype=int)
     row_widths = np.zeros(N, dtype=int)
+    row_padded_heights = np.zeros(M, dtype=int)
+    row_padded_widths = np.zeros(N, dtype=int)
 
     n, m = 0, 0
     for i, b in enumerate(blobs):
-        max_heights[m] = max(max_heights[m], b.max_y - b.min_y + 1)
-        row_widths[m] += b.max_x - b.min_x + 1
+        row_heights[m] = max(row_heights[m], b.height)
+        row_padded_heights[m] = max(row_padded_heights[m], b.padded_height)
+        row_widths[m] += b.width
+        row_padded_widths[m] += b.padded_width
         n += 1
         if n == N:
             n, m = 0, m + 1
 
-    if verbose:
-        overall_max_height = sum(max_heights)
-
-        print(f"Row widths: {row_widths}")
-        print(f"Max heights: {max_heights} (overall: {overall_max_height})")
-
-    if pad_height == "all":
+    if pad_height == "row":
         # Pad all blobs to the height of the tallest blob in the row. Hence
         # all blobs will be as tall as the tallest blob in the row.
-        max_heights = np.full(M, max(max_heights))
+        if anchor.is_bottom:
+            n, m = 0, 0
+            for i, b in enumerate(blobs):
+                b.t_pad += row_padded_heights[m] - b.padded_height
+                n += 1
+                if n == N:
+                    n, m = 0, m + 1
+        elif anchor.is_top:
+            n, m = 0, 0
+            for i, b in enumerate(blobs):
+                b.b_pad += row_padded_heights[m] - b.padded_height
+                n += 1
+                if n == N:
+                    n, m = 0, m + 1
+
+    if verbose:
+        overall_max_height = sum(row_heights)
+
+        print(f"Row widths: {row_widths}")
+        print(f"Max heights: {row_heights} (overall: {overall_max_height})")
+
+        overall_max_height = sum(row_padded_heights)
+        print(f"Row padded widths: {row_padded_widths}")
+        print(
+            f"Row padded heights: {row_padded_heights} (overall: {overall_max_height})"
+        )
+
+    # if pad_height == "all":
+    #     # Pad all blobs to the height of the tallest blob in the row. Hence
+    #     # all blobs will be as tall as the tallest blob in the row.
+    #     row_heights = np.full(M, max(row_heights))
 
     out_shape = (
-        sum(max_heights) + (M + 1) * pad,
-        max(row_widths) + (N + 1) * pad,
+        sum(row_padded_heights) + (M + 1) * pad_magenta,
+        max(row_padded_widths) + (N + 1) * pad_magenta,
     )
 
     magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
@@ -329,52 +391,61 @@ def magentify(
 
     if verbose:
         print(f"Output image size: {out_shape[0]}x{out_shape[1]}")
+        print(f"Magenta padding: {pad_magenta}")
+        print(f"Blob padding: {pad_blob}")
+        print(f"Anchor: {anchor.name}")
+        print(f"Pad height: {pad_height.name}")
 
     # Copy the blobs into the output image
     image_data = np.array(image)
     n, m = 0, 0  # indices in the blob grid
-    k, l = pad, pad  # pixel-level cursor in the output image
+    k, l = pad_magenta, pad_magenta  # pixel-level cursor in the output image
 
     for i, b in enumerate(blobs):
-        blob_image_data = image_data[b.min_y : b.max_y + 1, b.min_x : b.max_x + 1, :]
+        blob_image_data = image_data[b.region]
 
-        if anchor.is_top:
-            k = sum(max_heights[:m]) + (m + 1) * pad
-        elif anchor.is_bottom:
-            delta = max_heights[m] - (b.max_y - b.min_y + 1)
-            k = sum(max_heights[:m]) + (m + 1) * pad + delta
+        # Move the anchor for this particular blob if needed
+        kp, lp = k, l
+        if anchor.is_bottom:
+            delta = row_padded_heights[m] - b.padded_height
+            kp = k + delta
+
+        # paste transparency into the entire *padded* blob region
+        region = (
+            slice(kp, kp + b.padded_height),
+            slice(lp, lp + b.padded_width),
+            slice(None),
+        )
+
+        if debug:
+            out_image_data[region] = np.array([0, 0, 255, 100])  # debug
+        else:
+            out_image_data[region] = background
 
         region = (
-            slice(k, k + b.max_y - b.min_y + 1),
-            slice(l, l + b.max_x - b.min_x + 1),
+            slice(kp + b.t_pad, kp + b.height + b.t_pad),
+            slice(lp + b.l_pad, lp + b.width + b.l_pad),
             slice(None),
         )
 
         out_image_data[region] = blob_image_data
 
-        if pad_height != "none":
-            delta = max_heights[m] - (b.max_y - b.min_y + 1)
-            if delta > 0:
-                if anchor.is_top:
-                    new_slice = slice(
-                        k + b.max_y - b.min_y + 1,
-                        k + b.max_y - b.min_y + 1 + delta,
-                    )
-                elif anchor.is_bottom:
-                    new_slice = slice(k - delta, k)
+        if debug:
+            # Draw a debug pixel at the anchor point
+            out_image_data[k, l] = np.array([0, 0, 255, 255])
 
-                region = (new_slice, *region[1:])
-
-                out_image_data[region] = background
+            if anchor.is_bottom:
+                out_image_data[kp, lp] = np.array([0, 128, 128, 255])
 
         # Move the pixel cursor
-        l += b.max_x - b.min_x + 1 + pad
+        l += b.width + pad_magenta + b.l_pad + b.r_pad
 
         # Keep track of the blob grid coordinates
         n += 1
         if n == N:
             n, m = 0, m + 1
-            l = pad
+            l = pad_magenta
+            k += row_padded_heights[m - 1] + pad_magenta
 
         if i == 9:
             break
@@ -429,6 +500,20 @@ def main() -> None:
         default="none",
     )
 
+    parser.add_argument(
+        "--pad-blob",
+        help="Padding inside the blobs.",
+        type=int,
+        default=0,
+    )
+
+    parser.add_argument(
+        "--debug",
+        help="Debug mode.",
+        action="store_true",
+        default=False,
+    )
+
     parser.add_argument("input", help="Input image file.")
     parser.add_argument("output", help="Output image file.")
 
@@ -438,9 +523,11 @@ def main() -> None:
 
     output_image = magentify(
         input_image,
-        pad=args.pad,
+        pad_magenta=args.pad,
         anchor=args.anchor,
         pad_height=args.pad_height,
+        pad_blob=args.pad_blob,
+        debug=args.debug,
         verbose=args.verbose,
     )
 
