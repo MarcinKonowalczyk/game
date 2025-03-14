@@ -8,7 +8,7 @@ import math
 from typing import Literal, ClassVar
 from enum import Enum
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 try:
     import colorama  # type: ignore
@@ -26,6 +26,14 @@ def cprint(message: str, color: str | None = None) -> None:
         )
     else:
         print(message)
+
+_info = lambda message: cprint("[INFO] " + str(message), "green")  # noqa: E731
+_error = lambda message: cprint("[ERROR] " + str(message), "red")  # noqa: E731
+_warning = lambda message: cprint("[WARNING] " + str(message), "yellow")  # noqa: E731
+
+# select debug behavior
+# _debug = lambda message: cprint("[DEBUG] " + str(message), "magenta")  # noqa: E731
+_debug = lambda message: ...  # noqa: E731
 
 
 class BlobError(Exception):
@@ -211,6 +219,10 @@ class Metablob:
     MAGIC: ClassVar[bytes] = 0b10101010.to_bytes(1, "big")
     META_LEN: ClassVar[int] = len(MAGIC) + 2  # magic length + data length
 
+    def __post_init__(self) -> None:
+        assert self.width > 0, "Width must be greater than 0"
+        assert self.height > 0, "Height must be greater than 0"
+
     @property
     def size(self) -> int:
         return self.width * self.height
@@ -225,6 +237,7 @@ class Metablob:
 
     @classmethod
     def from_available_space(cls, width: int, height: int, pad: int = 0) -> "Metablob":
+        _debug(f"from_available_space({width}, {height}, {pad})")
         return cls(width - 2 * pad, height - 2 * pad, pad, pad, pad, pad)
 
     def __str__(self) -> str:
@@ -234,16 +247,34 @@ class Metablob:
     def __repr__(self) -> str:
         return f"Metablob({self.width}, {self.height})"
 
-    def shrink(self) -> None:
+    def shrink(
+        self, strategy: Literal["smallest", "height-first"] = "smallest"
+    ) -> None:
         shape = (int(self.width), int(self.height))
         n_bits = (len(self.data) + self.META_LEN) * 8
 
-        while True:
-            wide = shape[0] > shape[1]
-            if wide:
-                new_shape = (shape[0] - 1, shape[1])
-            else:
+        if strategy == "smallest":
+
+            def shrink(shape: tuple[int, int], limit: int) -> tuple[int, int]:
+                wide = shape[0] > shape[1]
+                if wide:
+                    return (shape[0] - 1, shape[1])
+                else:
+                    return (shape[0], shape[1] - 1)
+
+        elif strategy == "height-first":
+
+            def shrink(shape: tuple[int, int], limit: int) -> tuple[int, int]:
                 new_shape = (shape[0], shape[1] - 1)
+
+                if new_shape[0] * new_shape[1] < limit:
+                    # can't shrink height anymore
+                    new_shape = (shape[0] - 1, shape[1])
+
+                return new_shape
+
+        while True:
+            new_shape = shrink(shape, n_bits)
 
             if new_shape[0] * new_shape[1] < n_bits:
                 break
@@ -359,6 +390,8 @@ def find_blobs(image: Image.Image) -> tuple[list[Blob], np.ndarray | None]:
 
     return blobs, background
 
+MAGENTA = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
+
 
 def magentify(
     image: Image.Image,
@@ -390,9 +423,9 @@ def magentify(
 
     # print all blobs
     if verbose:
-        print(f"Found {len(blobs)} blobs")
+        _info(f"Found {len(blobs)} blobs")
         for i, b in enumerate(blobs):
-            print(f"{i:02d}: {b}")
+            print(f" {i:02d}: {b}")
 
     # Check if any of the blobs are outside the image (this should never happen)
     for i, b in enumerate(blobs):
@@ -427,9 +460,9 @@ def magentify(
         assert N * M >= I + 1
 
     if verbose:
-        print(f"Packing {len(blobs)} blobs into a {N}x{M} grid")
+        _info(f"Packing {len(blobs)} blobs into a {N}x{M} grid")
         if metadata:
-            print("Adding a metadata blob at the end")
+            _info("Adding a metadata blob at the end")
 
     # Figure out the size of the output image
     # We need to know the widest and tallest blobs in each row and column
@@ -453,6 +486,14 @@ def magentify(
         max(row_padded_widths) + (N + 1) * pad_magenta,
     )
 
+    has_extra_metadata_row = metadata and row_padded_heights[-1] == 0
+    if has_extra_metadata_row:
+        # We don't have enough space for the metadata blob in the last row
+        # Add an extra row for the metadata blob
+        if verbose:
+            _warning("Adding a row for the metadata blob")
+        out_shape = (out_shape[0] + row_padded_heights[-2], out_shape[1])
+
     # Pad all blobs to the height of the tallest blob in the row. Hence
     # all blobs will be as tall as the tallest blob in the row.
     if pad_height == "row":
@@ -474,12 +515,12 @@ def magentify(
     if verbose:
         overall_max_height = sum(row_heights)
 
-        print(f"Row widths: {row_widths}")
-        print(f"Max heights: {row_heights} (overall: {overall_max_height})")
+        _debug(f"Row widths: {row_widths}")
+        _debug(f"Max heights: {row_heights} (overall: {overall_max_height})")
 
         overall_max_height = sum(row_padded_heights)
-        print(f"Row padded widths: {row_padded_widths}")
-        print(
+        _debug(f"Row padded widths: {row_padded_widths}")
+        _debug(
             f"Row padded heights: {row_padded_heights} (overall: {overall_max_height})"
         )
 
@@ -488,16 +529,14 @@ def magentify(
     #     # all blobs will be as tall as the tallest blob in the row.
     #     row_heights = np.full(M, max(row_heights))
 
-    magenta = np.array(Image.new("RGBA", (1, 1), "#ff00ffff"))
-
-    out_image_data = np.ones((*out_shape, 4), dtype=np.uint8) * magenta
+    out_image_data = np.ones((*out_shape, 4), dtype=np.uint8) * MAGENTA
 
     if verbose:
-        print(f"Output image size: {out_shape[0]}x{out_shape[1]}")
-        print(f"Magenta padding: {pad_magenta}")
-        print(f"Blob padding: {pad_blob}")
-        print(f"Anchor: {anchor.name}")
-        print(f"Pad height: {pad_height.name}")
+        _info(f"Output image size: {out_shape[0]}x{out_shape[1]}")
+        _debug(f"Magenta padding: {pad_magenta}")
+        _info(f"Blob padding: {pad_blob}")
+        _info(f"Anchor: {anchor.name}")
+        _debug(f"Pad height: {pad_height.name}")
 
     # Copy the blobs into the output image
     image_data = np.array(image)
@@ -567,11 +606,13 @@ def magentify(
         metablob.data += pad_blob.to_bytes(1, "big")
         metablob.data += anchor.to_int().to_bytes(1, "big")
 
-        metablob.shrink()
+        metablob.shrink(
+            strategy="height-first" if has_extra_metadata_row else "smallest"
+        )
 
         if verbose:
-            print("Adding metablob")
-            print(metablob)
+            _info("Adding metablob")
+            _info(metablob)
 
         # paste transparency into the entire *padded* metablob region
         region = (
@@ -590,9 +631,41 @@ def magentify(
             slice(l + metablob.l_pad, l + metablob.l_pad + metablob.width),
             slice(None),
         )
-        out_image_data[region] = metablob.image_data()
+        try:
+            out_image_data[region] = metablob.image_data()
+        except ValueError as e:
+            pass
+
+    if has_extra_metadata_row:
+        # The image might be too large. Try to shrink it from the bottom up
+        # to fit the last row of blobs.
+        if verbose:
+            _warning("Shrinking the image to fit the last row of blobs")
+            out_image_data = shrink_image_from_bottom(
+                out_image_data, pad_magenta=pad_magenta
+            )
 
     return Image.fromarray(out_image_data, "RGBA")
+
+def shrink_image_from_bottom(image_data: np.ndarray, *, pad_magenta: int) -> np.ndarray:
+    """Shrink an image from the bottom up to fit the last row of blobs."""
+    height, width, _ = image_data.shape
+
+    # figure out how many rows from the bottom of the immage are entirely magenta
+    n_magenta_rows = 0
+    for i in range(height - 1, -1, -1):
+        if np.all(image_data[i, :, :] == MAGENTA):
+            n_magenta_rows += 1
+        else:
+            break
+
+    n_to_crop = n_magenta_rows - pad_magenta
+    if n_to_crop < 0:
+        raise ValueError("Not enough magenta rows to shrink the image")
+    elif n_to_crop == 0:
+        return image_data
+    else:
+        return image_data[:-n_to_crop, :, :]
 
 
 def upscale(image: Image.Image, factor: int) -> Image.Image:
@@ -691,5 +764,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        cprint(f"{e.__class__.__name__}: {e}", "red")
+        _error(f"{e.__class__.__name__}: {e}")
         exit(1)

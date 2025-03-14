@@ -28,12 +28,24 @@ pub struct Blob {
 }
 
 impl Blob {
+    pub fn new(x_min: u32, y_min: u32, x_max: u32, y_max: u32) -> Blob {
+        return Blob {
+            x_min,
+            y_min,
+            x_max,
+            y_max,
+        };
+    }
     pub fn width(&self) -> usize {
         (self.x_max - self.x_min + 1) as usize
     }
 
     pub fn height(&self) -> usize {
         (self.y_max - self.y_min + 1) as usize
+    }
+
+    pub fn size(&self) -> u32 {
+        return self.width() as u32 * self.height() as u32;
     }
 
     pub fn to_rect(&self) -> raylib::Rectangle {
@@ -52,12 +64,29 @@ pub struct Metablob {
     anchor: anim::Anchor,
 }
 
-struct FindBlobsData {
+struct Colors {
     colors: Vec<Color>,
     width: usize,
     height: usize,
-    visited: Vec<bool>,
-    stack: Vec<(usize, usize)>,
+}
+
+trait PixelAccess<T> {
+    // 2D index
+    fn at(&self, x: usize, y: usize) -> T;
+    // Linear index
+    fn index(&self, i: usize) -> T;
+}
+
+trait Dimensions {
+    fn width(&self) -> usize;
+    fn height(&self) -> usize;
+    fn len(&self) -> usize {
+        return self.width() * self.height();
+    }
+}
+
+trait FromImage {
+    fn from_image(image: webhacks::Image) -> Self;
 }
 
 fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
@@ -78,39 +107,91 @@ fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
     return (colors, width, height);
 }
 
-impl FindBlobsData {
-    fn from_image(image: webhacks::Image) -> FindBlobsData {
+impl FromImage for Colors {
+    fn from_image(image: webhacks::Image) -> Colors {
         let (colors, width, height) = image_to_colors(image);
-        let visited = vec![false; colors.len()];
-        let stack = Vec::new();
-        return FindBlobsData {
+        return Colors {
             colors,
             width,
             height,
-            visited,
-            stack,
         };
     }
 }
 
-impl FindBlobsData {
-    #[allow(dead_code)]
+impl PixelAccess<Color> for Colors {
     fn at(&self, x: usize, y: usize) -> Color {
         return self.colors[x + y * self.width];
     }
-
-    #[allow(dead_code)]
-    fn len(&self) -> usize {
-        return self.colors.len();
+    fn index(&self, i: usize) -> Color {
+        return self.colors[i];
     }
 }
 
+impl Dimensions for Colors {
+    fn width(&self) -> usize {
+        return self.width;
+    }
+
+    fn height(&self) -> usize {
+        return self.height;
+    }
+}
+
+struct FindBlobsData {
+    colors: Colors,
+    visited: Vec<bool>,
+    stack: Vec<(usize, usize)>,
+}
+
+impl PixelAccess<Color> for FindBlobsData {
+    fn at(&self, x: usize, y: usize) -> Color {
+        return self.colors.at(x, y);
+    }
+    fn index(&self, i: usize) -> Color {
+        return self.colors.index(i);
+    }
+}
+
+impl Dimensions for FindBlobsData {
+    fn width(&self) -> usize {
+        return self.colors.width();
+    }
+
+    fn height(&self) -> usize {
+        return self.colors.height();
+    }
+}
+
+impl FromImage for FindBlobsData {
+    fn from_image(image: webhacks::Image) -> FindBlobsData {
+        let colors = Colors::from_image(image);
+        let visited = vec![false; colors.len()];
+        return FindBlobsData {
+            colors: colors,
+            visited: visited,
+            stack: Vec::new(),
+        };
+    }
+}
+
+// impl FindBlobsData {
+//     #[allow(dead_code)]
+//     fn at(&self, x: usize, y: usize) -> Color {
+//         return self.colors[x + y * self.width];
+//     }
+
+//     #[allow(dead_code)]
+//     fn len(&self) -> usize {
+//         return self.colors.len();
+//     }
+// }
+
 impl FindBlobsData {
     fn visit(&mut self, x: usize, y: usize) -> Option<Color> {
-        if x >= self.width || y >= self.height {
+        if x >= self.width() || y >= self.height() {
             return None;
         }
-        let i = x as usize + y as usize * self.width;
+        let i = x as usize + y as usize * self.width();
         if i >= self.visited.len() {
             return None;
         }
@@ -119,7 +200,7 @@ impl FindBlobsData {
             return None;
         }
         self.visited[i] = true;
-        let color = self.colors[i];
+        let color = self.colors.index(i);
 
         if is_magenta(color) {
             return None;
@@ -134,13 +215,13 @@ impl FindBlobsData {
         if x > 0 {
             self.stack.push((x - 1, y));
         }
-        if x < self.width - 1 {
+        if x < self.width() - 1 {
             self.stack.push((x + 1, y));
         }
         if y > 0 {
             self.stack.push((x, y - 1));
         }
-        if y < self.height - 1 {
+        if y < self.height() - 1 {
             self.stack.push((x, y + 1));
         }
     }
@@ -235,8 +316,8 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
     let mut dat = FindBlobsData::from_image(image);
 
     // Find all blobs.
-    for x in 0..dat.width {
-        for y in 0..dat.height {
+    for x in 0..dat.width() {
+        for y in 0..dat.height() {
             let color = dat.visit(x, y);
             if color.is_none() {
                 continue;
@@ -282,6 +363,7 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
         }
     }
 
+    // DEBUG!!
     // Shrink the blobs to remove any 1-pixel border
     // for blob in &mut blobs {
     //     blob.x_min += 2;
@@ -290,6 +372,7 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
     //     blob.y_max -= 2;
     // }
 
+    // DEBUG!!
     // for (i, blob) in blobs.iter().enumerate() {
     //     println!(
     //         "Blob {} at ({}, {}) to ({}, {})",
@@ -306,6 +389,189 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
     });
 
     return (blobs, metablob);
+}
+
+// Iterate through the pixels of a blob, starting from the top-left corner
+// in rings, moving clockwise.
+struct BlobRings {
+    blob: Blob,
+    pub x: u32,
+    pub y: u32,
+    direction: Direction,
+    steps: u32,
+    ring: u32,
+}
+
+#[derive(PartialEq)]
+enum Direction {
+    Contract,
+    Right,
+    Down,
+    Left,
+    Up,
+}
+
+impl BlobRings {
+    fn new(blob: Blob) -> BlobRings {
+        return BlobRings {
+            blob: blob,
+            x: blob.x_min,
+            y: blob.y_min,
+            direction: Direction::Right,
+            steps: 0,
+            ring: 0,
+        };
+    }
+}
+impl Iterator for BlobRings {
+    type Item = (u32, u32, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.steps >= self.blob.size() {
+            // we have visited all pixels in the blob
+            None
+        } else {
+            let out = Some((self.x, self.y, self.ring));
+            match self.direction {
+                Direction::Right | Direction::Contract => {
+                    self.x += 1;
+                    if self.x == (self.blob.x_max - self.ring) {
+                        // this is the last step of walking right
+                        self.direction = Direction::Down;
+                    }
+                    if self.direction == Direction::Contract {
+                        // This is a first ste of walking right into the new ring.
+                        self.ring += 1;
+                        self.direction = Direction::Right;
+                    }
+                }
+                Direction::Down => {
+                    self.y += 1;
+                    if self.y == (self.blob.y_max - self.ring) {
+                        // this is the last step of walking down
+                        self.direction = Direction::Left;
+                    }
+                }
+                Direction::Left => {
+                    self.x -= 1;
+                    if self.x == (self.blob.x_min + self.ring) {
+                        // this is the last step of walking left
+                        self.direction = Direction::Up;
+                    }
+                }
+                Direction::Up => {
+                    self.y -= 1;
+                    if self.y == (self.blob.y_min + self.ring + 1) {
+                        // this is the last step of walking up
+                        self.direction = Direction::Contract;
+                    }
+                }
+            };
+            self.steps += 1;
+            out
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // expected!["000100200300310"] == vec![(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0), (3, 1, 0)]
+    macro_rules! expected {
+        ($e:expr) => {
+            $e.chars()
+                .map(|c| c.to_digit(10).unwrap() as u32)
+                .collect::<Vec<u32>>()
+                .chunks(3)
+                .map(|chunk| (chunk[0], chunk[1], chunk[2]))
+                .collect::<Vec<(u32, u32, u32)>>()
+        };
+    }
+
+    #[test]
+    fn test_blob_rings_4x4() {
+        let blob = Blob::new(0, 0, 3, 3);
+        let rings = BlobRings::new(blob);
+
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = expected!["000100200300310320330230130030020010111211221121"];
+
+        assert_eq!(coords, expected);
+    }
+
+    #[test]
+    fn test_blob_rings_3x3() {
+        let blob = Blob::new(0, 0, 2, 2);
+        let rings = BlobRings::new(blob);
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = expected!["000100200210220120020010111"];
+
+        assert_eq!(coords, expected);
+    }
+
+    #[test]
+    fn test_blob_rings_2x2() {
+        let blob = Blob::new(0, 0, 1, 1);
+        let rings = BlobRings::new(blob);
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = expected!["000100110010"];
+
+        assert_eq!(coords, expected);
+    }
+
+    #[test]
+    fn test_blob_rings_1x1() {
+        let blob = Blob::new(0, 0, 0, 0);
+        let rings = BlobRings::new(blob);
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = vec![(0, 0, 0)];
+
+        assert_eq!(coords, expected);
+    }
+
+    #[test]
+    fn test_blob_rings_0x0() {
+        let blob = Blob::new(0, 0, 0, 0);
+        let rings = BlobRings::new(blob);
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = vec![(0, 0, 0)];
+
+        assert_eq!(coords, expected);
+    }
+
+    #[test]
+    fn test_blob_rings_wide() {
+        let blob = Blob::new(0, 0, 3, 1);
+        let rings = BlobRings::new(blob);
+        let coords: Vec<(u32, u32, u32)> = rings.collect();
+        let expected = expected!["000100200300310210110010"];
+
+        assert_eq!(coords, expected);
+    }
+}
+
+// Infer the padding of a blob by walking the rings of the blob until a non-transparent pixel is found.
+// The padding for all the blobs is the min over all the blobs.
+fn infer_blob_padding(image: webhacks::Image, blobs: &[Blob]) -> u32 {
+    let colors = Colors::from_image(image);
+    blobs
+        .iter()
+        .map(|blob| {
+            let ring = BlobRings::new(*blob);
+            let mut max_ring = 0;
+            for (x, y, ring) in ring {
+                let color = colors.at(x as usize, y as usize);
+                if color.a == 0 {
+                    max_ring = max_ring.max(ring)
+                } else {
+                    break;
+                }
+            }
+            max_ring
+        })
+        .min()
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
@@ -368,6 +634,9 @@ impl Anim {
 
         if let Some(metablob) = metablob {
             self.meta.pad_blob = metablob.pad_blob;
+        } else {
+            self.meta.pad_blob = infer_blob_padding(self.image, &self.blobs);
+            // println!("Inferred padding: {}", self.meta.pad_blob);
         }
     }
 
