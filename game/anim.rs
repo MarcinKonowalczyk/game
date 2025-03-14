@@ -7,15 +7,29 @@ use crate::webhacks;
 
 use raylib_wasm::{self as raylib, Color};
 
-const MAGENTA: Color = Color {
-    r: 255,
-    g: 0,
-    b: 255,
-    a: 255,
-};
+trait SpecificColors {
+    fn is_magenta(&self) -> bool;
+    fn is_alpha(&self) -> bool;
+    fn is_black(&self) -> bool;
+    fn is_white(&self) -> bool;
+}
 
-fn is_magenta(color: Color) -> bool {
-    color.r == MAGENTA.r && color.g == MAGENTA.g && color.b == MAGENTA.b
+impl SpecificColors for Color {
+    fn is_magenta(&self) -> bool {
+        self.r == 255 && self.g == 0 && self.b == 255 && self.a == 255
+    }
+
+    fn is_alpha(&self) -> bool {
+        self.a == 0
+    }
+
+    fn is_black(&self) -> bool {
+        self.r == 0 && self.g == 0 && self.b == 0
+    }
+
+    fn is_white(&self) -> bool {
+        self.r == 255 && self.g == 255 && self.b == 255
+    }
 }
 
 #[repr(C, align(4))]
@@ -30,31 +44,32 @@ pub struct Blob {
 impl Blob {
     pub fn new(x_min: u32, y_min: u32, x_max: u32, y_max: u32) -> Blob {
         return Blob {
-            x_min,
-            y_min,
-            x_max,
-            y_max,
+            x_min: x_min,
+            y_min: y_min,
+            x_max: x_max,
+            y_max: y_max,
         };
     }
-    pub fn width(&self) -> usize {
+}
+
+impl Dimensions for Blob {
+    fn width(&self) -> usize {
         (self.x_max - self.x_min + 1) as usize
     }
 
-    pub fn height(&self) -> usize {
+    fn height(&self) -> usize {
         (self.y_max - self.y_min + 1) as usize
     }
+}
 
-    pub fn size(&self) -> u32 {
-        return self.width() as u32 * self.height() as u32;
-    }
-
-    pub fn to_rect(&self) -> raylib::Rectangle {
-        raylib::Rectangle {
-            x: self.x_min as f32,
-            y: self.y_min as f32,
-            width: self.width() as f32,
-            height: self.height() as f32,
-        }
+impl From<Blob> for raylib::Rectangle {
+    fn from(blob: Blob) -> raylib::Rectangle {
+        return raylib::Rectangle {
+            x: blob.x_min as f32,
+            y: blob.y_min as f32,
+            width: blob.width() as f32,
+            height: blob.height() as f32,
+        };
     }
 }
 
@@ -77,10 +92,10 @@ trait PixelAccess<T> {
     fn index(&self, i: usize) -> T;
 }
 
-trait Dimensions {
+pub trait Dimensions {
     fn width(&self) -> usize;
     fn height(&self) -> usize;
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         return self.width() * self.height();
     }
 }
@@ -165,7 +180,7 @@ impl Dimensions for FindBlobsData {
 impl FromImage for FindBlobsData {
     fn from_image(image: webhacks::Image) -> FindBlobsData {
         let colors = Colors::from_image(image);
-        let visited = vec![false; colors.len()];
+        let visited = vec![false; colors.size()];
         return FindBlobsData {
             colors: colors,
             visited: visited,
@@ -173,18 +188,6 @@ impl FromImage for FindBlobsData {
         };
     }
 }
-
-// impl FindBlobsData {
-//     #[allow(dead_code)]
-//     fn at(&self, x: usize, y: usize) -> Color {
-//         return self.colors[x + y * self.width];
-//     }
-
-//     #[allow(dead_code)]
-//     fn len(&self) -> usize {
-//         return self.colors.len();
-//     }
-// }
 
 impl FindBlobsData {
     fn visit(&mut self, x: usize, y: usize) -> Option<Color> {
@@ -202,7 +205,7 @@ impl FindBlobsData {
         self.visited[i] = true;
         let color = self.colors.index(i);
 
-        if is_magenta(color) {
+        if color.is_magenta() {
             return None;
         }
 
@@ -241,13 +244,13 @@ enum MetablobPixel {
 }
 
 fn metablob_pixel_sorter(color: Color) -> MetablobPixel {
-    if color.a == 0 {
+    if color.is_alpha() {
         return MetablobPixel::Transparent;
     }
-    if color.r == 0 && color.g == 0 && color.b == 0 {
+    if color.is_black() {
         return MetablobPixel::Black;
     }
-    if color.r == 255 && color.g == 255 && color.b == 255 {
+    if color.is_white() {
         return MetablobPixel::White;
     }
     return MetablobPixel::Wrong;
@@ -427,7 +430,7 @@ impl Iterator for BlobRings {
     type Item = (u32, u32, u32);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.steps >= self.blob.size() {
+        if self.steps >= self.blob.size() as u32 {
             // we have visited all pixels in the blob
             None
         } else {
@@ -707,7 +710,7 @@ fn draw_at_position(
     let frame = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
 
     let blob = anim_blobs[frame];
-    let mut source = blob.to_rect();
+    let mut source = raylib::Rectangle::from(blob);
 
     // shrink the source rect by the padding
     source.x += pad_blob as f32;
