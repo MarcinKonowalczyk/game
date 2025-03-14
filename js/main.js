@@ -554,8 +554,8 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             const sourceRec = getRectangle(buffer, sourceRec_ptr);
             const destRec = getRectangle(buffer, destRec_ptr);
             CTX.save();
-            CTX.translate(destRec.x, destRec.y);
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 1.0, 1.0, destRec.width, destRec.height);
+            CTX.imageSmoothingEnabled = false;
+            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, destRec.x, destRec.y, destRec.width, destRec.height);
             CTX.restore();
         },
         GetScreenWidth: () => CTX.canvas.width,
