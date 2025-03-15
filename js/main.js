@@ -136,23 +136,20 @@ if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
     document.getElementsByTagName('head')[0].appendChild(meta);
 }
 
-let audio = {
-    loop: undefined,
+let MUSIC_STATUS = {
+    "NotFound": -1,
+    "NotLoaded": 0,
+    "Loaded": 1,
 }
 
-function initAudioContext(url) {
-    loopify(url, function (err, loop) {
-        // If something went wrong, `err` is supplied
-        if (err) {
-            return console.err(err);
-        }
-        audio.loop = loop;
-    });
+let audio = {
+    loop: undefined,
+    status: MUSIC_STATUS.NotLoaded,
 }
 
 function tryToPlayAudio() {
     if (audio.loop === undefined) {
-        // no audio loaded
+        // no audio
         return;
     }
     if (audio.loop.playing()) {
@@ -243,6 +240,7 @@ const LOG_LEVELS = {
 }
 
 let info = (msg) => _log(LOG_LEVELS.INFO, msg);
+let error = (msg) => _log(LOG_LEVELS.ERROR, msg);
 
 // setup the game RNG
 // https://stackoverflow.com/a/47593316
@@ -622,9 +620,15 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
 
             // Wait for the file fo be fetched
             fetch(file_path).then((response) => {
-                initAudioContext(response.url);
-            }).catch((err) => {
-                console.log(err);
+                loopify(response.url, function (err, loop) {
+                    if (err) {
+                        error(err);
+                        audio.status = MUSIC_STATUS.NotFound;
+                    } else {
+                        audio.loop = loop;
+                        audio.status = MUSIC_STATUS.Loaded;
+                    }
+                });
             });
 
             return id;
@@ -633,9 +637,13 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             drop_asset_id(id);
             delete audio[id];
         },
-        IsMusicLoaded: () => {
-            return audio.loop !== undefined;
-        },
+        // pub fn MusicStatus(music: Music) -> i32;
+        // pub enum MusicStatus {
+        //     NotFound = -1,
+        //     NotLoaded = 0,
+        //     Loaded = 1,
+        // }
+        MusicStatus: (id) => audio.status,
         PlayMusicStream: (_audio_id) => {
             tryToPlayAudio();
         },

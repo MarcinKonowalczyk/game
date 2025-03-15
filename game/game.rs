@@ -4,6 +4,7 @@ use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
 use u32_bool::Bool;
+use webhacks::MusicStatus;
 
 mod log;
 
@@ -153,10 +154,6 @@ pub fn game_init() -> State {
 
     let music = webhacks::load_music_stream("assets_private/hello_03.wav");
 
-    // SetMusicVolume(music, 1.0);
-
-    webhacks::play_music_stream(music);
-
     let font = webhacks::load_font("assets_private/Kavoon-Regular.ttf");
 
     let (path_points, path_length) = make_path_points();
@@ -247,6 +244,7 @@ pub fn game_load(_state: *mut State) {
 
     // check if the music is loaded
     if !webhacks::is_music_loaded(state.music) {
+        println!("music not loaded: {:?}", state.music);
         any_not_loaded = true;
     }
 
@@ -290,6 +288,8 @@ pub fn game_load(_state: *mut State) {
 
         state.bullet_anim.find_blobs();
         state.bullet_anim.unload_image();
+
+        webhacks::play_music_stream(state.music);
 
         if state.mute.into() {
             webhacks::set_music_volume(state.music, 0.0);

@@ -53,10 +53,14 @@ export function loopify(uri, cb) {
 
     // XHR complete
     request.onload = function () {
-        context.decodeAudioData(request.response, success, function (err) {
-            // Audio was bad
-            cb(new Error("Couldn't decode audio from " + uri));
-        });
+        if (request.status !== 200) {
+            cb(new Error("Couldn't load audio from " + uri));
+        } else {
+            context.decodeAudioData(request.response, success, function (err) {
+                // Audio was bad
+                cb(new Error("Couldn't decode audio from " + uri));
+            });
+        }
     };
 
     request.send();

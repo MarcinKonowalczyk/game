@@ -9,7 +9,7 @@ use crate::anim::Anim;
 use crate::entity_manager::{EntityId, HasId};
 use crate::State;
 use crate::ACTIVE_RADIUS;
-use crate::ALPHA_BEIGE;
+// use crate::ALPHA_BEIGE;
 use crate::SPEED_ENEMY;
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {

@@ -94,7 +94,7 @@ pub mod ffi {
         pub fn UnloadImage(image: Image);
         pub fn LoadTextureFromImage(image: Image) -> Texture;
         pub fn LoadImage(file_path: *const i8) -> Image;
-        pub fn IsMusicLoaded(music: Music) -> bool;
+        pub fn MusicStatus(music: Music) -> i32;
         pub fn IsFontLoaded(music: Font) -> bool;
         pub fn IsImageLoaded(music: Image) -> bool;
         pub fn IsTextureLoaded(music: Texture) -> bool;
@@ -412,14 +412,36 @@ pub fn load_image(file_path: &str) -> Image {
     };
 }
 
-pub fn is_music_loaded(#[allow(unused)] music: Music) -> bool {
-    if is_null_music(music) {
-        return false;
+#[derive(PartialEq)]
+pub enum MusicStatus {
+    NotFound = -1,
+    NotLoaded = 0,
+    Loaded = 1,
+}
+
+impl From<i32> for MusicStatus {
+    fn from(value: i32) -> Self {
+        match value {
+            -1 => MusicStatus::NotFound,
+            0 => MusicStatus::NotLoaded,
+            1 => MusicStatus::Loaded,
+            _ => panic!("Unknown music status: {}", value),
+        }
     }
+}
+pub fn is_music_loaded(#[allow(unused)] music: Music) -> bool {
+    let status = get_music_status(music);
+    return status == MusicStatus::Loaded || status == MusicStatus::NotFound;
+}
+
+pub fn get_music_status(#[allow(unused)] music: Music) -> MusicStatus {
     #[cfg(feature = "web")]
-    return unsafe { ffi::IsMusicLoaded(music) };
+    {
+        let status = unsafe { ffi::MusicStatus(music) };
+        return status.into();
+    }
     #[cfg(feature = "native")]
-    return true;
+    return MusicStatus::Loaded;
 }
 
 pub fn is_font_loaded(#[allow(unused)] font: Font) -> bool {
