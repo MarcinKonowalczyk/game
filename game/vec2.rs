@@ -73,6 +73,10 @@ impl Vector2 {
         }
     }
 
+    pub fn angle(&self) -> f32 {
+        self.y.atan2(self.x)
+    }
+
     // pub fn adds(&self, other: f32) -> Vector2 {
     //     Vector2::new(self.x + other, self.y + other)
     // }

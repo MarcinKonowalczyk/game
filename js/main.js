@@ -165,6 +165,7 @@ let IMAGES = new Map();
 let TEXTURES = new Map();
 let FONTS = new Map();
 
+let PAUSED = false;
 let WASM = undefined;
 let DT = undefined;
 let WF = undefined;
@@ -173,6 +174,9 @@ let _PREV_TIMESTAMP = undefined;
 let TARGET_FPS = undefined;
 let LOG_CALLBACK = undefined;
 let LOG_LEVEL = 3; // default to 3=INFO
+
+
+document.onvisibilitychange = () => PAUSED = document.hidden;
 
 // Add String.format
 // https://stackoverflow.com/a/4673436
@@ -548,14 +552,33 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.drawImage(img, 0, 0);
             CTX.restore();
         },
-        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr) => {
+        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr, origin_ptr, rotation_deg) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
             const sourceRec = getRectangle(buffer, sourceRec_ptr);
             const destRec = getRectangle(buffer, destRec_ptr);
+            const origin = getVector2(buffer, origin_ptr);
             CTX.save();
-            CTX.translate(destRec.x, destRec.y);
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, 1.0, 1.0, destRec.width, destRec.height);
+            CTX.imageSmoothingEnabled = false;
+
+            let scale_x = destRec.width / sourceRec.width;
+            let scale_y = destRec.height / sourceRec.height;
+
+            CTX.scale(scale_x, scale_y);
+
+            let angle = rotation_deg / 180 * Math.PI;
+            CTX.rotate(angle);
+
+            let tx = destRec.x / scale_x;
+            let ty = destRec.y / scale_y;
+
+            CTX.translate(
+                tx * Math.cos(angle) + ty * Math.sin(angle),
+                ty * Math.cos(angle) - tx * Math.sin(angle),
+            )
+
+            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, -origin.x / scale_x, -origin.y / scale_y, sourceRec.width, sourceRec.height);
+            // CTX.drawImage(img, 0, 0);
             CTX.restore();
         },
         GetScreenWidth: () => CTX.canvas.width,
@@ -786,40 +809,42 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             window.removeEventListener("keydown", keyDown);
             return;
         }
-        DT = (timestamp - _PREV_TIMESTAMP) / 1000.0;
-        _PREV_TIMESTAMP = timestamp;
 
-        if (read_loaded_flag(state)) {
-            WF.game_frame(state);
-        } else {
-            WF.game_load(state);
+        if (!PAUSED) {
+            DT = (timestamp - _PREV_TIMESTAMP) / 1000.0;
+            _PREV_TIMESTAMP = timestamp;
+
             if (read_loaded_flag(state)) {
-                console.log("Game loaded!! :D");
-                try {
-                    let parsed_state = parse_state(state, n_state_size);
-                    console.log(parsed_state);
-                } catch (e) {
-                    console.log(e);
+                WF.game_frame(state);
+            } else {
+                WF.game_load(state);
+                if (read_loaded_flag(state)) {
+                    console.log("Game loaded!! :D");
+                    try {
+                        let parsed_state = parse_state(state, n_state_size);
+                        console.log(parsed_state);
+                    } catch (e) {
+                        console.log(e);
+                    }
                 }
             }
-        }
 
-        // state history between frames
-        GAME.prev_mouse_state = GAME.mouse_state.slice();
-        GAME.prev_keys_state = new Set(GAME.keys_state);
+            // state history between frames
+            GAME.prev_mouse_state = GAME.mouse_state.slice();
+            GAME.prev_keys_state = new Set(GAME.keys_state);
+        }
 
         // log last element of state
         // let parsed_state = parse_state(state, n_state_size);
         // let dt = parsed_state.curr_time - parsed_state.prev_time;
         // console.log(parsed_state.enemies[0]);
         window.requestAnimationFrame(next);
+        // setTimeout(() => { window.requestAnimationFrame(next); }, 0);
         // DEBUG: slow down the loop
         // setTimeout(() => {window.requestAnimationFrame(next);}, 1000);
     };
-    window.requestAnimationFrame((timestamp) => {
-        _PREV_TIMESTAMP = timestamp;
-        window.requestAnimationFrame(next);
-    });
+    _PREV_TIMESTAMP = performance.now();
+    next(performance.now());
 }).catch((err) => {
     console.log(err);
     console.log('update WASM_PATH in `main.js` bruv!');

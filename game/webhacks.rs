@@ -88,6 +88,8 @@ pub mod ffi {
             texture: Texture,
             sourceRec: *const raylib::Rectangle,
             destRec: *const raylib::Rectangle,
+            origin: *const Vector2,
+            rotation: f32,
         );
         pub fn UnloadImage(image: Image);
         pub fn LoadTextureFromImage(image: Image) -> Texture;
@@ -349,13 +351,19 @@ pub fn draw_texture_pro(
     texture: Texture,
     source_rec: raylib::Rectangle,
     dest_rec: raylib::Rectangle,
-    // origin: raylib::Vector2,
-    // rotation: f32,
+    origin: Vector2,
+    rotation: f32,
     // tint: raylib::Color,
 ) {
     #[cfg(feature = "web")]
     unsafe {
-        ffi::DrawTexturePro(texture, addr_of!(source_rec), addr_of!(dest_rec))
+        ffi::DrawTexturePro(
+            texture,
+            addr_of!(source_rec),
+            addr_of!(dest_rec),
+            addr_of!(origin),
+            rotation.to_degrees(),
+        );
     };
     #[cfg(feature = "native")]
     unsafe {
@@ -363,8 +371,8 @@ pub fn draw_texture_pro(
             texture,
             source_rec,
             dest_rec,
-            raylib::Vector2 { x: 0.0, y: 0.0 },
-            0.0,
+            origin.into(),
+            rotation.to_degrees(),
             raylib::RAYWHITE,
         );
     };
@@ -556,8 +564,8 @@ pub fn draw_line_ex(start_pos: Vector2, end_pos: Vector2, thickness: f32, color:
     }
 }
 
-pub fn draw_circle(mouse_pos: Vector2, radius: f32, color: Color) {
-    unsafe { raylib::DrawCircle(mouse_pos.x as i32, mouse_pos.y as i32, radius, color) }
+pub fn draw_circle(position: Vector2, radius: f32, color: Color) {
+    unsafe { raylib::DrawCircle(position.x as i32, position.y as i32, radius, color) }
 }
 
 pub fn get_mouse_position() -> Vector2 {

@@ -1,5 +1,5 @@
 raylib
 target
 Cargo.lock
-assets
+assets_private
 assets.zip
