@@ -5,7 +5,7 @@ use crate::entity_manager::{EntityId, HasId, NO_ID};
 use crate::vec2::Vector2;
 
 use crate::u32_bool::Bool;
-use crate::State;
+use crate::{anim, State};
 use crate::{webhacks, SPEED_BULLET, WINDOW_WIDTH};
 
 // use crate::ACTIVE_RADIUS;
@@ -56,6 +56,8 @@ pub struct Bullet {
     pub dead: Bool,
     pub id: EntityId,
     pub damage: u32,
+    pub anim: Option<anim::Anim>,
+    pub radius: f32,
 }
 
 impl Bullet {
@@ -68,6 +70,8 @@ impl Bullet {
             dead: false.into(),
             damage: 1,
             id: NO_ID,
+            anim: None,
+            radius: 15.0,
         }
     }
 
@@ -125,13 +129,24 @@ impl Bullet {
         // webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _state: &State) {
-        // let radius = if self.hover.into() {
-        //     TURRET_RADIUS * 1.5
-        // } else {
-        //     TURRET_RADIUS
-        // };
-        webhacks::draw_circle(self.position, 5.0, GREEN);
+    pub fn draw_foreground(&self, state: &State) {
+        match self.anim {
+            Some(ref anim) => {
+                // anim.draw(self.position, state.curr_time);
+
+                let scale = (2.0 * self.radius) / (anim.meta.avg_width).max(anim.meta.avg_height);
+                anim.draw(
+                    self.position,
+                    scale,
+                    crate::anim::Anchor::Center,
+                    self.velocity.angle(),
+                    state.curr_time,
+                );
+            }
+            None => {
+                webhacks::draw_circle(self.position, self.radius, GREEN);
+            }
+        }
     }
 }
 

@@ -644,13 +644,13 @@ impl Anim {
     }
 
     pub fn unload_image(&mut self) {
-        if webhacks::is_image_loaded(self.image) {
+        if self.is_image_loaded() {
             webhacks::unload_image(self.image);
             self.image = webhacks::null_image();
         }
     }
 
-    pub fn draw(&self, position: Vector2, scale: f32, anchor: Anchor, time: f32) {
+    pub fn draw(&self, position: Vector2, scale: f32, anchor: Anchor, rotation: f32, time: f32) {
         draw_at_position(
             position,
             &self.blobs,
@@ -659,7 +659,16 @@ impl Anim {
             scale,
             anchor,
             self.meta.pad_blob,
+            rotation,
         );
+    }
+
+    pub fn is_image_loaded(&self) -> bool {
+        return webhacks::is_image_loaded(self.image);
+    }
+
+    pub fn is_texture_loaded(&self) -> bool {
+        return webhacks::is_texture_loaded(self.texture);
     }
 }
 
@@ -706,6 +715,7 @@ fn draw_at_position(
     scale: f32,
     anchor: Anchor,
     pad_blob: u32,
+    rotation: f32,
 ) {
     let frame = time_to_anim_frame(time, 0.1, anim_blobs.len() as u32);
 
@@ -721,27 +731,44 @@ fn draw_at_position(
     let width = blob.width() as f32 * scale;
     let height = blob.height() as f32 * scale;
 
-    let dest = match anchor {
-        Anchor::CenterCenter => raylib::Rectangle {
-            x: position.x - width / 2.0,
-            y: position.y - height / 2.0,
-            width: width,
-            height: height,
-        },
-        Anchor::TopLeft => raylib::Rectangle {
-            x: position.x,
-            y: position.y,
-            width: width,
-            height: height,
-        },
-        Anchor::BottomCenter => raylib::Rectangle {
-            x: position.x - width / 2.0,
-            y: position.y - height,
-            width: width,
-            height: height,
-        },
+    // let dest = match anchor {
+    //     Anchor::CenterCenter => raylib::Rectangle {
+    //         x: position.x - width / 2.0,
+    //         y: position.y - height / 2.0,
+    //         width: width,
+    //         height: height,
+    //     },
+    //     Anchor::TopLeft => raylib::Rectangle {
+    //         x: position.x,
+    //         y: position.y,
+    //         width: width,
+    //         height: height,
+    //     },
+    //     Anchor::BottomCenter => raylib::Rectangle {
+    //         x: position.x - width / 2.0,
+    //         y: position.y - height,
+    //         width: width,
+    //         height: height,
+    //     },
+    // };
+
+    let dest = raylib::Rectangle {
+        x: position.x,
+        y: position.y,
+        width: width,
+        height: height,
     };
 
-    webhacks::draw_texture_pro(texture, source, dest);
-    // webhacks::draw_circle(position, 5.0, RAYWHITE); // debug circle
+    // let rotation_origin = Vector2::new(0.0, 0.0);
+    // let origin = Vector2::new(dest.width / 2.0, dest.height / 2.0);
+    let origin = match anchor {
+        Anchor::CenterCenter => Vector2::new(dest.width / 2.0, dest.height / 2.0),
+        Anchor::TopLeft => Vector2::new(0.0, 0.0),
+        Anchor::BottomCenter => Vector2::new(dest.width / 2.0, dest.height),
+    };
+
+    // webhacks::draw_circle(rotation_origin, 5.0, raylib::BLUE); // debug circle
+
+    webhacks::draw_texture_pro(texture, source, dest, origin, rotation);
+    // webhacks::draw_circle(Vector2::new(dest.x, dest.y), 5.0, raylib::RED); // debug circle
 }

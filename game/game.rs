@@ -29,12 +29,12 @@ const SPEED_DEFAULT: f32 = 850.0;
 const SPEED_BOOSTED: f32 = 1550.0;
 
 const SPAWN_INTERVAL: f32 = 1.0;
-const SPEED_ENEMY: f32 = 240.0;
+const SPEED_ENEMY: f32 = 210.0;
 const SPEED_BULLET: f32 = SPEED_ENEMY + 50.0;
 // const SPEED_ENEMY: f32 = 1340.0;
 
 const TURRET_RADIUS: f32 = 10.0;
-const ACTIVE_RADIUS: f32 = 100.0;
+const ACTIVE_RADIUS: f32 = 150.0;
 
 const ALPHA_BEIGE: Color = Color {
     r: 211,
@@ -63,11 +63,8 @@ pub struct State {
     pub mouse_btn_pressed: Bool,
     pub music: webhacks::Music,
     pub font: webhacks::Font,
-    pub image: webhacks::Image,
-    // pub texture: webhacks::Texture,
-    // pub anim_blobs_n: u32,
-    // pub anim_blobs_arr: *const anim::Blob,
     pub slime_anim: anim::Anim,
+    pub bullet_anim: anim::Anim,
     pub path_n: u32,
     pub path_arr: *const Vector2,
     pub path_length: f32,
@@ -154,13 +151,13 @@ pub fn game_init() -> State {
     webhacks::init_audio_device();
     webhacks::set_random_seed(42);
 
-    let music = webhacks::load_music_stream("assets/hello_03.wav");
+    let music = webhacks::load_music_stream("assets_private/hello_03.wav");
 
     // SetMusicVolume(music, 1.0);
 
     webhacks::play_music_stream(music);
 
-    let font = webhacks::load_font("assets/Kavoon-Regular.ttf");
+    let font = webhacks::load_font("assets_private/Kavoon-Regular.ttf");
 
     let (path_points, path_length) = make_path_points();
     let (path_n, path_arr) = clone_to_malloced(&path_points);
@@ -169,8 +166,8 @@ pub fn game_init() -> State {
 
     make_initial_turrets(&mut man);
 
-    let image = webhacks::load_image("assets/Blue_Slime-Idle-mag.png");
-    let slime_anim = anim::Anim::new(image);
+    let slime_anim = anim::Anim::new(webhacks::load_image("assets/slime_green-mag.png"));
+    let bullet_anim = anim::Anim::new(webhacks::load_image("assets/bullet-mag.png"));
 
     State {
         all_loaded: false.into(),
@@ -183,8 +180,8 @@ pub fn game_init() -> State {
         mouse_btn_pressed: false.into(),
         music: music,
         font: font,
-        image: image,
         slime_anim: slime_anim,
+        bullet_anim: bullet_anim,
         path_n: path_n,
         path_arr: path_arr,
         path_length: path_length,
@@ -258,8 +255,7 @@ pub fn game_load(_state: *mut State) {
         any_not_loaded = true;
     }
 
-    // check if the image is loaded
-    if !webhacks::is_image_loaded(state.slime_anim.image) {
+    if !state.slime_anim.is_image_loaded() {
         any_not_loaded = true;
     } else {
         // slime_anim image is loaded! let's load the texture
@@ -267,7 +263,20 @@ pub fn game_load(_state: *mut State) {
 
         state.slime_anim.load_texture();
 
-        if !webhacks::is_texture_loaded(state.slime_anim.texture) {
+        if !state.slime_anim.is_texture_loaded() {
+            any_not_loaded = true;
+        }
+    }
+
+    if !state.bullet_anim.is_image_loaded() {
+        any_not_loaded = true;
+    } else {
+        // bullet_anim image is loaded! let's load the texture
+        // state.texture = webhacks::load_texture_from_image(state.image);
+
+        state.bullet_anim.load_texture();
+
+        if !state.bullet_anim.is_texture_loaded() {
             any_not_loaded = true;
         }
     }
@@ -276,16 +285,11 @@ pub fn game_load(_state: *mut State) {
         state.all_loaded = true.into();
 
         // Once we've determined that init/load is done, we can unload some resources
-
         state.slime_anim.find_blobs();
-        // let blobs = anim::find_blobs(state.image);
-        // let (anim_blobs_n, anim_blobs_arr) = clone_to_malloced(&blobs);
-        //
-        // state.anim_blobs_arr = anim_blobs_arr;
-        // state.anim_blobs_n = anim_blobs_n;
-
-        // webhacks::unload_image(state.image); // we don't need the image anymore
         state.slime_anim.unload_image();
+
+        state.bullet_anim.find_blobs();
+        state.bullet_anim.unload_image();
 
         if state.mute.into() {
             webhacks::set_music_volume(state.music, 0.0);
@@ -433,21 +437,15 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
     let mut update = HandleEntitiesUpdate::new();
 
     {
-        // let mut man = state_to_man(state);
-        let curr_time = state.curr_time;
-
-        let last_enemy = { state.man.enemies.last().cloned() };
-
-        if match last_enemy {
+        if match state.man.enemies.last() {
             Some(Enemy {
                 spawn_time: last_spawn_time,
                 ..
-            }) if curr_time - last_spawn_time > SPAWN_INTERVAL => true,
-
+            }) if state.curr_time - last_spawn_time > SPAWN_INTERVAL => true,
             None => true,
             _ => false,
         } {
-            let mut new_enemy = Enemy::new(curr_time);
+            let mut new_enemy = Enemy::new(state.curr_time);
             new_enemy.anim = Some(state.slime_anim.clone());
             update.new_enemies.push(new_enemy.into());
         }
@@ -502,11 +500,12 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             .iter()
             .filter_map(|update| match &update.bullet_request {
                 Some(bullet_request) => {
-                    let bullet = bullet::Bullet::new(
+                    let mut bullet = bullet::Bullet::new(
                         bullet_request.position,
                         bullet_request.source,
                         bullet_request.target,
                     );
+                    bullet.anim = Some(state.bullet_anim.clone());
                     Some(bullet.into())
                 }
                 None => None,
@@ -723,10 +722,11 @@ pub fn game_frame(state_ptr: *mut State) {
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        state.slime_anim.draw(
+        state.bullet_anim.draw(
             state.slime_pos,
             5.0,
-            anim::Anchor::BottomCenter,
+            anim::Anchor::Center,
+            90.0_f32.to_radians(),
             state.curr_time,
         );
 

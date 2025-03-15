@@ -94,7 +94,7 @@ impl Enemy {
             spawn_time: time,
             dead: false.into(),
             id: 0,
-            radius: 10.0,
+            radius: 20.0,
             anim: None,
         }
     }
@@ -126,8 +126,8 @@ impl Enemy {
     }
 
     pub fn draw_background(&self, state: &State) {
-        webhacks::draw_circle(self.position, self.radius, RAYWHITE);
-        webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
+        // webhacks::draw_circle(self.position, self.radius, RAYWHITE);
+        // webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
 
         // draw health bar
         let width = self.radius * 2.0 * 1.5;
@@ -150,6 +150,7 @@ impl Enemy {
                     self.position,
                     scale,
                     crate::anim::Anchor::Center,
+                    0.0,
                     state.curr_time,
                 );
             }
@@ -183,17 +184,3 @@ impl HasId for Enemy {
         self.id = id;
     }
 }
-
-// impl HasKind for Enemy {
-//     fn kind(&self) -> EntityKind {
-//         EntityKind::Enemy
-//     }
-// }
-
-// use std::default::Default;
-
-// impl Default for Enemy {
-//     fn default() -> Self {
-//         Enemy::new(0.0)
-//     }
-// }

@@ -552,14 +552,33 @@ WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
             CTX.drawImage(img, 0, 0);
             CTX.restore();
         },
-        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr) => {
+        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr, origin_ptr, rotation_deg) => {
             const img = TEXTURES[id];
             const buffer = WF.memory.buffer;
             const sourceRec = getRectangle(buffer, sourceRec_ptr);
             const destRec = getRectangle(buffer, destRec_ptr);
+            const origin = getVector2(buffer, origin_ptr);
             CTX.save();
             CTX.imageSmoothingEnabled = false;
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, destRec.x, destRec.y, destRec.width, destRec.height);
+
+            let scale_x = destRec.width / sourceRec.width;
+            let scale_y = destRec.height / sourceRec.height;
+
+            CTX.scale(scale_x, scale_y);
+
+            let angle = rotation_deg / 180 * Math.PI;
+            CTX.rotate(angle);
+
+            let tx = destRec.x / scale_x;
+            let ty = destRec.y / scale_y;
+
+            CTX.translate(
+                tx * Math.cos(angle) + ty * Math.sin(angle),
+                ty * Math.cos(angle) - tx * Math.sin(angle),
+            )
+
+            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, -origin.x / scale_x, -origin.y / scale_y, sourceRec.width, sourceRec.height);
+            // CTX.drawImage(img, 0, 0);
             CTX.restore();
         },
         GetScreenWidth: () => CTX.canvas.width,
