@@ -3,6 +3,7 @@ use raylib_wasm::PINK;
 use crate::vec2::Vector2;
 // use crate::vec2::Vector2Ext;
 
+use crate::anim;
 use crate::entity_manager::{EntityId, HasId};
 use crate::webhacks;
 use crate::State;
@@ -11,7 +12,6 @@ use crate::u32_bool::Bool;
 
 use crate::ACTIVE_RADIUS;
 use crate::ALPHA_BEIGE;
-use crate::TURRET_RADIUS;
 
 const FIRE_COOLDOWN: f32 = 0.5; // seconds
 
@@ -22,6 +22,9 @@ pub struct Turret {
     pub hover: Bool,
     pub fire_cooldown: f32,
     pub id: EntityId,
+    pub facing: Vector2,
+    pub radius: f32,
+    pub anim: Option<anim::Anim>,
 }
 pub struct TurretUpdate {
     pub id: EntityId, // to match up with the turret
@@ -29,6 +32,7 @@ pub struct TurretUpdate {
     pub fire_cooldown: f32,
     pub hover: bool,
     pub bullet_request: Option<BulletRequest>,
+    pub facing: Vector2,
 }
 
 impl From<&Turret> for TurretUpdate {
@@ -39,6 +43,7 @@ impl From<&Turret> for TurretUpdate {
             fire_cooldown: turret.fire_cooldown,
             hover: turret.hover.into(),
             bullet_request: None,
+            facing: turret.facing,
         }
     }
 }
@@ -57,6 +62,9 @@ impl Turret {
             hover: false.into(),
             fire_cooldown: FIRE_COOLDOWN,
             id: 0,
+            facing: Vector2::new(1.0, 0.0), // facing right
+            radius: 20.0,
+            anim: None,
         }
     }
 
@@ -68,9 +76,9 @@ impl Turret {
 
         let mut update = TurretUpdate::from(self);
 
-        if mouse_distance < TURRET_RADIUS {
+        if mouse_distance < self.radius {
             update.hover = true;
-        } else if mouse_distance < 1.5 * TURRET_RADIUS {
+        } else if mouse_distance < 1.5 * self.radius {
             // no change
         } else {
             update.hover = false;
@@ -82,10 +90,10 @@ impl Turret {
         }
 
         update.fire_cooldown -= dt;
-        if update.fire_cooldown <= 0.0 {
-            if let Some(enemy) = state.man.closest_enemy(self.position) {
-                if self.position.dist(&enemy.position) < ACTIVE_RADIUS {
-                    // fire!
+        if let Some(enemy) = state.man.closest_enemy(self.position) {
+            if self.position.dist(&enemy.position) < ACTIVE_RADIUS {
+                update.facing = enemy.position - self.position;
+                if update.fire_cooldown <= 0.0 {
                     update.bullet_request = Some(BulletRequest {
                         position: self.position,
                         source: self.id,
@@ -104,19 +112,35 @@ impl Turret {
         self.dead = update.dead.into();
         self.fire_cooldown = update.fire_cooldown;
         self.hover = update.hover.into();
+        self.facing = update.facing;
     }
 
-    pub fn draw_background(&self, _state: &State) {
+    pub fn draw_debug(&self, _state: &State) {
         webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
     }
 
-    pub fn draw_foreground(&self, _state: &State) {
+    pub fn draw_foreground(&self, state: &State) {
         let radius = if self.hover.into() {
-            TURRET_RADIUS * 1.5
+            self.radius * 1.5
         } else {
-            TURRET_RADIUS
+            self.radius
         };
-        webhacks::draw_circle(self.position, radius, PINK);
+        match self.anim {
+            Some(ref anim) => {
+                let scale = (2.0 * radius) / (anim.meta.avg_width).max(anim.meta.avg_height);
+                let rotation = self.facing.angle();
+                anim.draw(
+                    self.position,
+                    scale,
+                    crate::anim::Anchor::Center,
+                    rotation,
+                    state.curr_time,
+                );
+            }
+            None => {
+                webhacks::draw_circle(self.position, radius, PINK);
+            }
+        }
     }
 }
 

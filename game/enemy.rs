@@ -9,7 +9,7 @@ use crate::anim::Anim;
 use crate::entity_manager::{EntityId, HasId};
 use crate::State;
 use crate::ACTIVE_RADIUS;
-use crate::ALPHA_BEIGE;
+// use crate::ALPHA_BEIGE;
 use crate::SPEED_ENEMY;
 
 fn path_pos_to_screen_pos(path_pos: f32, path: &[Vector2]) -> Vector2 {
@@ -125,15 +125,9 @@ impl Enemy {
         self.position = update.position;
     }
 
-    pub fn draw_background(&self, state: &State) {
+    pub fn draw_debug(&self, state: &State) {
         // webhacks::draw_circle(self.position, self.radius, RAYWHITE);
         // webhacks::draw_circle(self.position, ACTIVE_RADIUS, ALPHA_BEIGE);
-
-        // draw health bar
-        let width = self.radius * 2.0 * 1.5;
-        let pos = self.position + Vector2::new(-width / 2.0, -(self.radius * 1.5));
-        let width = width * (self.health as f32 / 3.0);
-        webhacks::draw_line_ex(pos, pos + Vector2::new(width, 0.0), 5.0, RED);
 
         // draw debug dot at the position along the path
         let path = state.get_path();
@@ -142,6 +136,12 @@ impl Enemy {
     }
 
     pub fn draw_foreground(&self, state: &State) {
+        // draw health bar
+        let width = self.radius * 2.0 * 1.5;
+        let pos = self.position + Vector2::new(-width / 2.0, -(self.radius * 1.5));
+        let width = width * (self.health as f32 / 3.0);
+        webhacks::draw_line_ex(pos, pos + Vector2::new(width, 0.0), 5.0, RED);
+
         match self.anim {
             Some(ref anim) => {
                 // anim.draw(self.position, state.curr_time);
