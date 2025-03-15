@@ -1,5 +1,5 @@
 // 4-byte bool
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Bool {
     pub value: u32,
 }

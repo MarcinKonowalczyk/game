@@ -119,7 +119,7 @@ impl Bullet {
         self.dead = update.dead.into();
     }
 
-    pub fn draw_background(&self, state: &State) {
+    pub fn draw_debug(&self, state: &State) {
         match state.man.get_enemy(self.target) {
             Some(target) => {
                 webhacks::draw_line_ex(self.position, target.position, 2.0, GREEN);

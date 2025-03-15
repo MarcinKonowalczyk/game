@@ -66,10 +66,12 @@ pub struct State {
     pub font: webhacks::Font,
     pub slime_anim: anim::Anim,
     pub bullet_anim: anim::Anim,
+    pub turret_anim: anim::Anim,
     pub path_n: u32,
     pub path_arr: *const Vector2,
     pub path_length: f32,
     pub mute: Bool,
+    pub debug: Bool,
     pub life: u32,
     pub man: EntityManager,
 }
@@ -126,6 +128,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
 fn make_initial_turrets(man: &mut EntityManager) {
     let t1 = Turret::new(Vector2::new(200.0, 150.0));
     let t2 = Turret::new(Vector2::new(400.0, 180.0));
+
     man.add(Entity::Turret(t1));
     man.add(Entity::Turret(t2));
 }
@@ -153,7 +156,6 @@ pub fn game_init() -> State {
     webhacks::set_random_seed(42);
 
     let music = webhacks::load_music_stream("assets_private/hello_03.wav");
-
     let font = webhacks::load_font("assets_private/Kavoon-Regular.ttf");
 
     let (path_points, path_length) = make_path_points();
@@ -165,6 +167,7 @@ pub fn game_init() -> State {
 
     let slime_anim = anim::Anim::new(webhacks::load_image("assets/slime_green-mag.png"));
     let bullet_anim = anim::Anim::new(webhacks::load_image("assets/bullet-mag.png"));
+    let turret_anim = anim::Anim::new(webhacks::load_image("assets/turret-mag.png"));
 
     State {
         all_loaded: false.into(),
@@ -179,10 +182,12 @@ pub fn game_init() -> State {
         font: font,
         slime_anim: slime_anim,
         bullet_anim: bullet_anim,
+        turret_anim: turret_anim,
         path_n: path_n,
         path_arr: path_arr,
         path_length: path_length,
         mute: true.into(),
+        debug: true.into(),
         life: 20,
         man: man,
     }
@@ -279,6 +284,19 @@ pub fn game_load(_state: *mut State) {
         }
     }
 
+    if !state.turret_anim.is_image_loaded() {
+        any_not_loaded = true;
+    } else {
+        // turret_anim image is loaded! let's load the texture
+        // state.texture = webhacks::load_texture_from_image(state.image);
+
+        state.turret_anim.load_texture();
+
+        if !state.turret_anim.is_texture_loaded() {
+            any_not_loaded = true;
+        }
+    }
+
     if !any_not_loaded {
         state.all_loaded = true.into();
 
@@ -288,6 +306,9 @@ pub fn game_load(_state: *mut State) {
 
         state.bullet_anim.find_blobs();
         state.bullet_anim.unload_image();
+
+        state.turret_anim.find_blobs();
+        state.turret_anim.unload_image();
 
         webhacks::play_music_stream(state.music);
 
@@ -305,6 +326,10 @@ pub fn game_load(_state: *mut State) {
             )
             .as_str(),
         );
+
+        for turret in state.man.turrets.iter_mut() {
+            turret.anim = Some(state.turret_anim.clone());
+        }
     }
 
     // wrtie back the state
@@ -316,6 +341,7 @@ pub fn game_load(_state: *mut State) {
 struct HandleKeysUpdate {
     slime_pos: Vector2,
     mute: bool,
+    debug: bool,
 }
 
 impl From<&State> for HandleKeysUpdate {
@@ -323,6 +349,7 @@ impl From<&State> for HandleKeysUpdate {
         HandleKeysUpdate {
             slime_pos: state.slime_pos,
             mute: state.mute.into(),
+            debug: state.debug.into(),
         }
     }
 }
@@ -369,12 +396,28 @@ fn handle_keys(state: &State) -> HandleKeysUpdate {
     // if raylib::IsKeyPressed(KEY::M) {
     if webhacks::is_key_pressed(KEY::M) {
         update.mute = !update.mute;
-        webhacks::set_music_volume(state.music, if update.mute { 0.0 } else { 1.0 });
+    }
+
+    if webhacks::is_key_pressed(KEY::P) {
+        update.debug = !update.debug;
     }
 
     update
 }
 
+fn apply_keys_update(state: &mut State, update: HandleKeysUpdate) {
+    if state.mute != update.mute.into() {
+        if update.mute {
+            webhacks::set_music_volume(state.music, 0.0);
+        } else {
+            webhacks::set_music_volume(state.music, 1.0);
+        }
+    }
+
+    state.slime_pos = update.slime_pos;
+    state.mute = update.mute.into();
+    state.debug = update.debug.into();
+}
 struct HandleMouseUpdate {
     mouse_pos: Vector2,
     mouse_btn: bool,
@@ -521,7 +564,9 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             .any(|update| update.dead.into());
 
         if !any_dead && { state.mouse_btn_pressed.into() } {
-            update.new_turrets.push(Turret::new(state.mouse_pos).into());
+            let mut new_turret = Turret::new(state.mouse_pos);
+            new_turret.anim = Some(state.turret_anim.clone());
+            update.new_turrets.push(new_turret.into());
         }
     }
 
@@ -576,7 +621,7 @@ fn apply_entities_update(state: &mut State, update: HandleEntitiesUpdate) {
     state.man.filter_dead();
 }
 
-fn draw_entities_background(state: &State) {
+fn draw_entities_debug(state: &State) {
     // draw lines from enemies to turrets if they are within range
     for enemy in state.man.enemies.iter() {
         for turret in state.man.turrets.iter() {
@@ -598,14 +643,14 @@ fn draw_entities_background(state: &State) {
     }
 
     for enemy in state.man.enemies.iter() {
-        enemy.draw_background(state);
+        enemy.draw_debug(state);
     }
     for turret in state.man.turrets.iter() {
-        turret.draw_background(state);
+        turret.draw_debug(state);
     }
 
     for bullet in state.man.bullets.iter() {
-        bullet.draw_background(state);
+        bullet.draw_debug(state);
     }
 }
 
@@ -709,8 +754,7 @@ pub fn game_frame(state_ptr: *mut State) {
     let game_over = state.life == 0;
 
     let update = handle_keys(&state);
-    state.slime_pos = update.slime_pos;
-    state.mute = update.mute.into();
+    apply_keys_update(&mut state, update);
 
     let update = handle_mouse(&state);
     state.mouse_pos = update.mouse_pos;
@@ -722,16 +766,18 @@ pub fn game_frame(state_ptr: *mut State) {
     {
         unsafe { raylib::ClearBackground(BLUE) };
 
-        state.bullet_anim.draw(
+        state.slime_anim.draw(
             state.slime_pos,
             5.0,
             anim::Anchor::Center,
-            90.0_f32.to_radians(),
+            45.0_f32.to_radians(),
             state.curr_time,
         );
 
         draw_text(&state);
-        draw_entities_background(&state);
+        if state.debug.into() {
+            draw_entities_debug(&state);
+        }
         draw_path(&state);
         draw_entities_foreground(&state);
 
