@@ -4,7 +4,6 @@ use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
 use u32_bool::Bool;
-use webhacks::MusicStatus;
 
 mod log;
 
@@ -13,6 +12,7 @@ mod bullet;
 mod defer;
 mod enemy;
 mod entity_manager;
+mod path;
 mod turret;
 mod u32_bool;
 mod vec2;
@@ -34,7 +34,6 @@ const SPEED_ENEMY: f32 = 210.0;
 const SPEED_BULLET: f32 = SPEED_ENEMY + 50.0;
 // const SPEED_ENEMY: f32 = 1340.0;
 
-const TURRET_RADIUS: f32 = 10.0;
 const ACTIVE_RADIUS: f32 = 150.0;
 
 const ALPHA_BEIGE: Color = Color {
@@ -67,9 +66,7 @@ pub struct State {
     pub slime_anim: anim::Anim,
     pub bullet_anim: anim::Anim,
     pub turret_anim: anim::Anim,
-    pub path_n: u32,
-    pub path_arr: *const Vector2,
-    pub path_length: f32,
+    pub path: path::Path,
     pub mute: Bool,
     pub debug: Bool,
     pub life: u32,
@@ -77,14 +74,6 @@ pub struct State {
 }
 
 impl State {
-    fn get_path(&self) -> &[Vector2] {
-        if self.path_arr.is_null() {
-            return &[];
-        } else {
-            unsafe { std::slice::from_raw_parts(self.path_arr, self.path_n as usize) }
-        }
-    }
-
     fn dt(&self) -> f32 {
         self.curr_time - self.prev_time
     }
@@ -95,7 +84,7 @@ pub fn get_state_size() -> usize {
     std::mem::size_of::<State>()
 }
 
-fn make_path_points() -> (Vec<Vector2>, f32) {
+fn make_initial_path() -> path::Path {
     let w = WINDOW_WIDTH as f32;
     let h = WINDOW_HEIGHT as f32;
     let p = 80.0;
@@ -115,14 +104,7 @@ fn make_path_points() -> (Vec<Vector2>, f32) {
         Vector2::new(p, h - p),
     ];
 
-    let path_length = path_points
-        .iter()
-        .fold((0.0, path_points[0]), |(acc, prev), &p| {
-            (acc + prev.dist(&p), p)
-        })
-        .0;
-
-    (path_points, path_length)
+    path::Path::new(path_points)
 }
 
 fn make_initial_turrets(man: &mut EntityManager) {
@@ -157,10 +139,9 @@ pub fn game_init() -> State {
 
     let music = webhacks::load_music_stream("assets_private/hello_03.wav");
     let font = webhacks::load_font("assets_private/Kavoon-Regular.ttf");
+    // let font = webhacks::load_font("assets_private/romulus.png");
 
-    let (path_points, path_length) = make_path_points();
-    let (path_n, path_arr) = clone_to_malloced(&path_points);
-
+    let path = make_initial_path();
     let mut man = EntityManager::new();
 
     make_initial_turrets(&mut man);
@@ -183,53 +164,11 @@ pub fn game_init() -> State {
         slime_anim: slime_anim,
         bullet_anim: bullet_anim,
         turret_anim: turret_anim,
-        path_n: path_n,
-        path_arr: path_arr,
-        path_length: path_length,
+        path: path,
         mute: true.into(),
         debug: true.into(),
         life: 20,
         man: man,
-    }
-}
-
-fn clone_to_malloced<T: Clone>(arr: &[T]) -> (u32, *mut T) {
-    match arr.len() {
-        0 => (0, std::ptr::null_mut()),
-        n => {
-            let mem_size = std::mem::size_of::<T>() * n;
-            match std::alloc::Layout::from_size_align(mem_size, 4) {
-                Ok(layout) => {
-                    let ptr = unsafe { std::alloc::alloc(layout) as *mut T };
-                    for (i, item) in arr.iter().enumerate() {
-                        unsafe {
-                            *ptr.offset(i as isize) = item.clone();
-                        }
-                    }
-                    (n as u32, ptr)
-                }
-                Err(_) => {
-                    panic!("failed to clone_to_malloced");
-                }
-            }
-        }
-    }
-}
-
-#[allow(unused)]
-fn free_malloced<T>(len: u32, ptr: *mut T) {
-    match ptr {
-        _ if ptr.is_null() => {}
-        _ => {
-            let size = std::mem::size_of::<T>() * len as usize;
-            match std::alloc::Layout::from_size_align(size, 4) {
-                Ok(layout) => {
-                    let _ptr = ptr as *mut u8;
-                    unsafe { std::alloc::dealloc(_ptr, layout) }
-                }
-                Err(_) => {}
-            }
-        }
     }
 }
 
@@ -488,7 +427,7 @@ fn handle_entities(state: &State) -> HandleEntitiesUpdate {
             None => true,
             _ => false,
         } {
-            let mut new_enemy = Enemy::new(state.curr_time);
+            let mut new_enemy = Enemy::new(state.path.start(), state.curr_time);
             new_enemy.anim = Some(state.slime_anim.clone());
             update.new_enemies.push(new_enemy.into());
         }
@@ -625,20 +564,20 @@ fn draw_entities_debug(state: &State) {
     // draw lines from enemies to turrets if they are within range
     for enemy in state.man.enemies.iter() {
         for turret in state.man.turrets.iter() {
-            let distance = enemy.position.dist(&turret.position);
+            let distance = enemy.position.xy.dist(&turret.position);
             if distance < ACTIVE_RADIUS {
                 let enemy_pos = enemy.position;
-                webhacks::draw_line_ex(enemy_pos, turret.position, 2.0, RAYWHITE);
+                webhacks::draw_line_ex(enemy_pos.into(), turret.position, 2.0, RAYWHITE);
             }
         }
     }
 
     // draw line to mouse if it's within range
     for enemy in state.man.enemies.iter() {
-        let distance = enemy.position.dist(&state.mouse_pos);
+        let distance = enemy.position.xy.dist(&state.mouse_pos);
         if distance < ACTIVE_RADIUS {
             let enemy_pos = enemy.position;
-            webhacks::draw_line_ex(enemy_pos, state.mouse_pos, 2.0, RAYWHITE);
+            webhacks::draw_line_ex(enemy_pos.into(), state.mouse_pos, 2.0, RAYWHITE);
         }
     }
 
@@ -677,14 +616,7 @@ fn draw_mouse(_state: &State) {
 }
 
 fn draw_path(state: &State) {
-    // Draw the path
-    let path = unsafe { std::slice::from_raw_parts(state.path_arr, state.path_n as usize) };
-    for i in 1..path.len() {
-        let p1 = path[i - 1];
-        let p2 = path[i];
-        webhacks::draw_line_ex(p1, p2, 2.0, RAYWHITE);
-        // unsafe { raylib::DrawLineEx(p1, p2, 2.0, RAYWHITE) }
-    }
+    state.path.draw(state);
 }
 
 fn draw_text(state: &State) {
@@ -731,11 +663,11 @@ fn draw_text(state: &State) {
     );
 
     // draw life
-    let path = state.get_path();
+    // let path = state.get_path();
     let life_text = format!("life: {}", state.life);
     let font_size = 30;
     let text_size = webhacks::measure_text(state.font, &life_text, font_size, 2.0);
-    let last = path[path.len() - 1];
+    let last = state.path.nodes[state.path.nodes.len() - 1];
     let pos = last + Vector2::new(-text_size.x as f32 / 2.0, 20.0);
     webhacks::draw_text(state.font, &life_text, pos, font_size, 2.0, RAYWHITE);
 }
