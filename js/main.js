@@ -4,6 +4,7 @@ import { loopify } from './loopify.js';
 import { wasm_to_struct } from './wasm_struct_parser.js';
 import { getString, getRectangle, getColor, getVector2 } from './mem_helpers.js';
 import { GLFW_MAP } from './glfw_map.js';
+import { find_blobs } from './png_font.js';
 
 const WASM_PATH = "./target/wasm32-unknown-unknown/debug/hotreload-raylib-wasm-template.wasm"
 const FONT_SCALE_MAGIC = 0.75;
@@ -33,6 +34,25 @@ function make_environment(...envs) {
     });
 }
 
+
+function log_N_times(n) {
+    let seen = new Map();
+    return (...args) => {
+        // get the line number of the caller
+        let stack = new Error().stack.split('\n');
+        let line = stack[2].split(':').pop();
+        let n_called = seen.get(line) || 0;
+        seen.set(line, n_called + 1);
+        if (n_called > (n - 1)) {
+            return;
+        }
+
+        console.log(...args);
+    }
+}
+
+let log_once = log_N_times(1);
+let log_head_10 = log_N_times(10);
 
 const GAME = document.getElementById("game");
 var CONTAINER = GAME.parentElement; // parent div
@@ -295,7 +315,12 @@ function load_ttf_font(id, font_name, file_path) {
             }).catch(reject);
         });
     }).then((font) => {
-        FONTS.set(id, font_name);
+        let font_obj = {
+            "name": font_name,
+            "kind": "ttf",
+            "font": font,
+        }
+        FONTS.set(id, font_obj);
         return id;
     }).catch((err) => {
         console.log(err);
@@ -304,9 +329,159 @@ function load_ttf_font(id, font_name, file_path) {
 }
 
 function load_png_font(id, font_name, file_path) {
+    if (FONTS.has(font_name)) {
+        // font already loaded
+        return FONTS.get(font_name);
+    }
     console.log("Loading PNG font", { id, font_name, file_path });
+
+    let img = new Image();
+
+    img.onload = () => {
+        let blobs = find_blobs(img);
+        console.log("Blobs", blobs);
+        let font_obj = {
+            "name": font_name,
+            "kind": "png",
+            "img": img,
+            "blobs": blobs,
+        }
+        FONTS.set(id, font_obj);
+    }
+    img.src = file_path;
 }
 
+
+function foreach_text_ex_ttf(font, text, pos, size, spacing, char_func) {
+    let ctx = CTX;
+    ctx.font = `${size}px ${font.name}`;
+
+    const lines = text.split('\n');
+
+    for (var i = 0; i < lines.length; i++) {
+        const chars = lines[i].split('');
+        let x = pos.x;
+        for (var j = 0; j < chars.length; j++) {
+            let char_info = {
+                char: chars[j],
+                x: x,
+                y: pos.y + size + (i * size),
+                size: size,
+            }
+            char_func(char_info);
+            x += ctx.measureText(chars[j]).width + spacing;
+        }
+    }
+}
+
+function draw_text_ex_ttf(font, text, pos, size, spacing, color) {
+    let ctx = CTX;
+    ctx.fillStyle = color;
+
+    foreach_text_ex_ttf(font, text, pos, size, spacing, (i) => {
+        ctx.font = `${i.size}px ${font.name}`;
+        ctx.fillText(i.char, i.x, i.y);
+    });
+}
+
+
+function measure_text_ex_ttf(font, text, size, spacing) {
+    let ctx = CTX;
+    ctx.font = `${size}px ${font.name}`;
+
+    let width = 0;
+    let height = 0;
+
+    foreach_text_ex_ttf(font, text, { x: 0, y: 0 }, size, spacing, (i) => {
+        width = Math.max(width, i.x + ctx.measureText(i.char).width);
+        height = Math.max(height, i.y + size);
+    });
+
+    return { width, height };
+}
+
+
+function foreach_text_ex_png(font, text, pos, size, spacing, char_func) {
+    let blobs = font.blobs;
+
+    const lines = text.split('\n');
+    const offset = 32; // offset for the first character (space)
+
+    // determine the width of small 'm' character
+    let m_blob = blobs[109 - offset]; // used to determine the width and the base height
+    let l_blob = blobs[108 - offset]; // used to determine the ascent
+    let j_blob = blobs[106 - offset]; // used to determine the descent
+
+    if (m_blob === undefined || l_blob === undefined || j_blob === undefined) {
+        console.error("Missing blobs", { m_blob, l_blob, j_blob });
+        return;
+    }
+
+    let m_width = m_blob.x_max - m_blob.x_min + 1;
+    // let m_height = m_blob.y_max - m_blob.y_min + 1;
+    let l_height = l_blob.y_max - l_blob.y_min + 1;
+    // let j_height = j_blob.y_max - j_blob.y_min + 1;
+
+    let scale = size / m_width; // how much to uniformly scale the font by
+
+    // let base_height = m_height * scale;
+    // let ascender = (l_height - m_height) * scale;
+    // let descender = (j_height - m_height) * scale;
+
+    let line_height = l_height * scale + 2;
+
+    for (var i = 0; i < lines.length; i++) {
+        const chars = lines[i].split('');
+        let x = pos.x;
+        for (var j = 0; j < chars.length; j++) {
+            let char = chars[j];
+            let char_code = char.charCodeAt(0);
+            var blob = blobs[char_code - offset];
+            if (blob === undefined) {
+                // No blob for this character. The last blob is the 'undefined' character
+                blob = blobs[blobs.length - 1];
+                // console.log("No blob for char", { char, char_code, blob });
+            }
+
+
+            let char_info = {
+                char: char,
+                sx: blob.x_min,
+                sy: blob.y_min,
+                sw: blob.x_max - blob.x_min + 1,
+                sh: blob.y_max - blob.y_min + 1,
+                dx: x,
+                dy: pos.y + i * line_height,
+                dw: (blob.x_max - blob.x_min + 1) * scale,
+                dh: (blob.y_max - blob.y_min + 1) * scale,
+            }
+
+            char_func(char_info);
+            x += char_info.sw * scale + spacing;
+        }
+    }
+}
+
+
+function draw_text_ex_png(font, text, pos, size, spacing, color) {
+    CTX.fillStyle = color;
+    CTX.imageSmoothingEnabled = false;
+    foreach_text_ex_png(font, text, pos, size, spacing, (i) => {
+        CTX.drawImage(font.img, i.sx, i.sy, i.sw, i.sh, i.dx, i.dy, i.dw, i.dh);
+    });
+}
+
+function measure_text_ex_png(font, text, size, spacing) {
+    let width = 0;
+    let height = 0;
+
+    foreach_text_ex_png(font, text, { x: 0, y: 0 }, size, spacing, (i) => {
+        width = Math.max(width, i.dx + i.dw);
+        height = Math.max(height, i.dy + i.dh);
+    });
+
+    return { width, height };
+}
 
 let TextFuncs = {
     LoadFont: (file_path_ptr) => {
@@ -330,7 +505,6 @@ let TextFuncs = {
             console.error("Unsupported font type", { ext });
         }
 
-
         return id;
     },
     IsFontLoaded: (font) => {
@@ -342,25 +516,18 @@ let TextFuncs = {
         const color = getColor(buffer, color_ptr);
         const pos = getVector2(buffer, position_ptr);
         fontSize *= FONT_SCALE_MAGIC;
-        var font_name = FONTS.get(font);
-        if (font_name === undefined) {
+        var font = FONTS.get(font);
+        if (font.name === undefined) {
             console.log("Font not found", FONTS, font);
             return;
         }
 
-        CTX.font = `${fontSize}px ${font_name}`;
-
-        CTX.fillStyle = color;
-        const lines = text.split('\n');
-
-        for (var i = 0; i < lines.length; i++) {
-            const chars = lines[i].split('');
-            let x = pos.x;
-            for (var j = 0; j < chars.length; j++) {
-                CTX.fillText(chars[j], x, pos.y + fontSize + (i * fontSize));
-                x += CTX.measureText(chars[j]).width + spacing;
-            }
-            // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+        if (font.kind === "ttf") {
+            draw_text_ex_ttf(font, text, pos, fontSize, spacing, color);
+        } else if (font.kind === "png") {
+            draw_text_ex_png(font, text, pos, fontSize, spacing, color);
+        } else {
+            console.error("Unsupported font kind", { font });
         }
     },
     // pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
@@ -368,31 +535,24 @@ let TextFuncs = {
         const buffer = WF.memory.buffer;
         const text = getString(buffer, text_ptr);
         fontSize *= FONT_SCALE_MAGIC;
-        var font_name = FONTS.get(font);
-        if (font_name === undefined) {
+        var font = FONTS.get(font);
+        if (font.name === undefined) {
             console.log("Font not found", FONTS, font);
             return;
         }
 
-        CTX.font = `${fontSize}px ${font_name}`;
-
-        const lines = text.split('\n');
-        let width = 0;
-        let height = 0;
-
-        for (var i = 0; i < lines.length; i++) {
-            const chars = lines[i].split('');
-            let x = 0;
-            for (var j = 0; j < chars.length; j++) {
-                x += CTX.measureText(chars[j]).width + spacing;
-            }
-            width = Math.max(width, x);
-            height += fontSize;
+        var measure;
+        if (font.kind === "ttf") {
+            measure = measure_text_ex_ttf(font, text, fontSize, spacing);
+        } else if (font.kind === "png") {
+            measure = measure_text_ex_png(font, text, fontSize, spacing);
+        } else {
+            console.error("Unsupported font kind", { font });
         }
 
         const out = new Float32Array(buffer, result_ptr, 2);
-        out[0] = width;
-        out[1] = height;
+        out[0] = measure.width;
+        out[1] = measure.height;
     },
 }
 

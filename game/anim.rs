@@ -213,7 +213,7 @@ impl FindBlobsData {
 }
 
 impl FindBlobsData {
-    fn append_neighbours(&mut self, x: usize, y: usize) {
+    fn push_neighbours(&mut self, x: usize, y: usize) {
         if x > 0 {
             self.stack.push((x - 1, y));
         }
@@ -336,7 +336,7 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
 
             // Flood fill the blob
             dat.clear_stack();
-            dat.append_neighbours(x, y);
+            dat.push_neighbours(x, y);
 
             while !dat.stack.is_empty() {
                 let (x, y) = dat.stack.pop().unwrap();
@@ -354,7 +354,7 @@ pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
                 blob.x_max = blob.x_max.max(x_u32);
                 blob.y_max = blob.y_max.max(y_u32);
 
-                dat.append_neighbours(x, y);
+                dat.push_neighbours(x, y);
             }
 
             match try_parse_as_metablob(&dat, &blob) {

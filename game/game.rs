@@ -67,6 +67,8 @@ pub struct State {
     pub slime_anim: anim::Anim,
     pub bullet_anim: anim::Anim,
     pub turret_anim: anim::Anim,
+    pub bkg: Option<webhacks::Image>,
+    pub bkg_texture: webhacks::Texture,
     pub path: path::Path,
     pub mute: Bool,
     pub debug: Bool,
@@ -140,8 +142,7 @@ pub fn game_init() -> State {
     webhacks::set_random_seed(42);
 
     let music = webhacks::load_music_stream("assets_private/hello_03.wav");
-    let font = webhacks::load_font("assets_private/Kavoon-Regular.ttf");
-    // let font = webhacks::load_font("assets_private/romulus.png");
+    let font = webhacks::load_font("assets/romulus.png");
 
     let path = make_initial_path();
     let mut man = EntityManager::new();
@@ -151,6 +152,11 @@ pub fn game_init() -> State {
     let slime_anim = anim::Anim::new(webhacks::load_image("assets/slime_green-mag.png"));
     let bullet_anim = anim::Anim::new(webhacks::load_image("assets/bullet-mag.png"));
     let turret_anim = anim::Anim::new(webhacks::load_image("assets/turret-mag.png"));
+
+    // let bkg = Some(webhacks::load_image(
+    //     "assets_private/bkg_screenshot_debug.png",
+    // ));
+    let bkg = None;
 
     State {
         all_loaded: false.into(),
@@ -166,6 +172,8 @@ pub fn game_init() -> State {
         slime_anim: slime_anim,
         bullet_anim: bullet_anim,
         turret_anim: turret_anim,
+        bkg: bkg,
+        bkg_texture: webhacks::null_texture(),
         path: path,
         mute: true.into(),
         debug: true.into(),
@@ -236,6 +244,21 @@ pub fn game_load(_state: *mut State) {
 
         if !state.turret_anim.is_texture_loaded() {
             any_not_loaded = true;
+        }
+    }
+
+    if let Some(bkg) = state.bkg {
+        if !webhacks::is_image_loaded(bkg) {
+            any_not_loaded = true;
+        } else {
+            if !webhacks::is_texture_loaded(state.bkg_texture) {
+                state.bkg_texture = webhacks::load_texture_from_image(bkg);
+                any_not_loaded = true;
+            }
+
+            if !webhacks::is_texture_loaded(state.bkg_texture) {
+                any_not_loaded = true;
+            }
         }
     }
 
@@ -758,6 +781,25 @@ fn draw_text_overlay(state: &State) {
             .spacing(2.4)
             .into(),
     );
+
+    if state.debug.into() {
+        draw_text(
+            state.font,
+            format!("Quick Brown Fox Jumps\nOver The Lazy Dog").as_str(),
+            Vector2::new(WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0),
+            DrawTextArgs::default()
+                .anchor(Anchor::Center)
+                .size(40)
+                .spacing(2.8)
+                .color(raylib::Color {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                })
+                .into(),
+        );
+    }
 }
 
 fn draw_game_over_overlay(state: &State) {
@@ -815,6 +857,17 @@ pub fn game_frame(state_ptr: *mut State) {
 
     {
         unsafe { raylib::ClearBackground(BLUE) };
+
+        // draw the background image
+        if !webhacks::is_null_texture(state.bkg_texture) {
+            webhacks::draw_texture_ex(
+                state.bkg_texture,
+                Vector2::new(0.0, 0.0),
+                0.0,
+                1.0,
+                RAYWHITE,
+            );
+        }
 
         state.slime_anim.draw(
             state.slime_pos,
