@@ -117,8 +117,8 @@ impl Enemy {
     }
 
     pub fn hit(&mut self, damage: u32) {
-        self.health -= damage;
-        if self.health <= 0 {
+        self.health -= std::cmp::min(self.health, damage);
+        if self.health == 0 {
             self.dead = true.into();
         }
     }
