@@ -105,10 +105,9 @@ trait FromImage {
 }
 
 fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
-    let width = webhacks::get_image_width(image) as usize;
-    let height = webhacks::get_image_height(image) as usize;
+    let shape = webhacks::get_image_shape(image);
 
-    let n = width * height;
+    let n = (shape.x * shape.y) as usize;
 
     let _colors = webhacks::load_image_colors(image);
     defer! { webhacks::unload_image_colors(_colors, n * std::mem::size_of::<Color>()) }
@@ -119,7 +118,7 @@ fn image_to_colors(image: webhacks::Image) -> (Vec<Color>, usize, usize) {
         colors.push(unsafe { *_colors.add(i) });
     }
 
-    return (colors, width, height);
+    return (colors, shape.x as usize, shape.y as usize);
 }
 
 impl FromImage for Colors {
@@ -308,10 +307,9 @@ fn try_parse_as_metablob(dat: &FindBlobsData, blob: &Blob) -> Option<Metablob> {
 pub fn find_blobs(image: webhacks::Image) -> (Vec<Blob>, Option<Metablob>) {
     let mut blobs = Vec::new();
     let mut metablob = None;
-    let width = webhacks::get_image_width(image);
-    let height = webhacks::get_image_height(image);
+    let shape = webhacks::get_image_shape(image);
 
-    if width <= 2 || height <= 2 {
+    if shape.x <= 2.0 || shape.y <= 2.0 {
         // Texture too small. Definitely not a sprite sheet. Return empty list.
         return (blobs, metablob);
     }
@@ -679,14 +677,14 @@ fn time_to_anim_frame(time: f32, frame_duration: f32, n_frames: u32) -> usize {
 #[derive(PartialEq, Eq)]
 pub enum Anchor {
     TopLeft,
-    // TopCenter,
-    // TopRight,
+    TopCenter,
+    TopRight,
     // CenterLeft,
     CenterCenter,
     // CenterRight,
     // BottomLeft,
     BottomCenter,
-    // BottomRight,
+    BottomRight,
 }
 
 impl Anchor {
@@ -765,6 +763,9 @@ fn draw_at_position(
         Anchor::CenterCenter => Vector2::new(dest.width / 2.0, dest.height / 2.0),
         Anchor::TopLeft => Vector2::new(0.0, 0.0),
         Anchor::BottomCenter => Vector2::new(dest.width / 2.0, dest.height),
+        Anchor::TopRight => Vector2::new(dest.width, 0.0),
+        Anchor::TopCenter => Vector2::new(dest.width / 2.0, 0.0),
+        Anchor::BottomRight => Vector2::new(dest.width, dest.height),
     };
 
     // webhacks::draw_circle(rotation_origin, 5.0, raylib::BLUE); // debug circle

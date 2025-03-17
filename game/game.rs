@@ -1,5 +1,6 @@
 // #![deny(unused_results)]
 
+use anim::Anchor;
 use entity_manager::{Entity, EntityManager};
 use raylib::{KeyboardKey as KEY, MouseButton, RAYWHITE};
 use raylib_wasm::{self as raylib, Color, BLUE};
@@ -71,6 +72,7 @@ pub struct State {
     pub debug: Bool,
     pub life: u32,
     pub man: EntityManager,
+    pub editor: Bool,
 }
 
 impl State {
@@ -169,6 +171,7 @@ pub fn game_init() -> State {
         debug: true.into(),
         life: 20,
         man: man,
+        editor: false.into(),
     }
 }
 
@@ -281,6 +284,7 @@ struct HandleKeysUpdate {
     slime_pos: Vector2,
     mute: bool,
     debug: bool,
+    editor: bool,
 }
 
 impl From<&State> for HandleKeysUpdate {
@@ -289,6 +293,7 @@ impl From<&State> for HandleKeysUpdate {
             slime_pos: state.slime_pos,
             mute: state.mute.into(),
             debug: state.debug.into(),
+            editor: state.editor.into(),
         }
     }
 }
@@ -332,13 +337,16 @@ fn handle_keys(state: &State) -> HandleKeysUpdate {
         update.slime_pos.y = WINDOW_HEIGHT as f32;
     }
 
-    // if raylib::IsKeyPressed(KEY::M) {
     if webhacks::is_key_pressed(KEY::M) {
         update.mute = !update.mute;
     }
 
     if webhacks::is_key_pressed(KEY::P) {
         update.debug = !update.debug;
+    }
+
+    if webhacks::is_key_pressed(KEY::E) {
+        update.editor = !update.editor;
     }
 
     update
@@ -356,6 +364,7 @@ fn apply_keys_update(state: &mut State, update: HandleKeysUpdate) {
     state.slime_pos = update.slime_pos;
     state.mute = update.mute.into();
     state.debug = update.debug.into();
+    state.editor = update.editor.into();
 }
 struct HandleMouseUpdate {
     mouse_pos: Vector2,
@@ -619,57 +628,162 @@ fn draw_path(state: &State) {
     state.path.draw(state);
 }
 
-fn draw_text(state: &State) {
-    let slime_pos_text = format! {
-        "slime: [{x}, {y}]",
-        x = state.slime_pos.x.round(),
-        y = state.slime_pos.y.round()
-    };
-    webhacks::draw_text(
-        state.font,
-        &slime_pos_text,
-        Vector2::new(10.0, 10.0),
-        20,
-        2.0,
-        RAYWHITE,
-    );
+struct DrawTextArgs {
+    size: i32,
+    spacing: f32,
+    color: Color,
+    anchor: anim::Anchor,
+}
 
-    let mouse_pos = format! {
-        "mouse: [{x}, {y}]",
-        x = state.mouse_pos.x.round(),
-        y = state.mouse_pos.y.round()
-    };
-    webhacks::draw_text(
+impl DrawTextArgs {
+    fn size(mut self, size: i32) -> Self {
+        self.size = size;
+        self
+    }
+
+    fn spacing(mut self, spacing: f32) -> Self {
+        self.spacing = spacing;
+        self
+    }
+
+    fn color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
+    fn anchor(mut self, anchor: anim::Anchor) -> Self {
+        self.anchor = anchor;
+        self
+    }
+}
+
+impl Default for DrawTextArgs {
+    fn default() -> DrawTextArgs {
+        DrawTextArgs {
+            size: 20,
+            spacing: 2.0,
+            color: RAYWHITE,
+            anchor: anim::Anchor::TopLeft,
+        }
+    }
+}
+
+fn draw_text(font: webhacks::Font, text: &str, position: Vector2, args: Option<DrawTextArgs>) {
+    let args = args.unwrap_or_default();
+    let text_size = webhacks::measure_text(font, text, args.size, args.spacing);
+    match args.anchor {
+        Anchor::TopLeft => {
+            webhacks::draw_text(font, text, position, args.size, args.spacing, args.color);
+        }
+        Anchor::TopRight => {
+            let pos = Vector2::new(position.x - text_size.x as f32, position.y);
+            webhacks::draw_text(font, text, pos, args.size, args.spacing, args.color);
+        }
+        Anchor::BottomCenter => {
+            let pos = Vector2::new(position.x - text_size.x as f32 / 2.0, position.y);
+            webhacks::draw_text(font, text, pos, args.size, args.spacing, args.color);
+        }
+        Anchor::TopCenter => {
+            let pos = Vector2::new(position.x - text_size.x as f32 / 2.0, position.y);
+            webhacks::draw_text(font, text, pos, args.size, args.spacing, args.color);
+        }
+        Anchor::Center => {
+            let pos = Vector2::new(
+                position.x - text_size.x as f32 / 2.0,
+                position.y - text_size.y as f32 / 2.0,
+            );
+            webhacks::draw_text(font, text, pos, args.size, args.spacing, args.color);
+        }
+        Anchor::BottomRight => {
+            let pos = Vector2::new(
+                position.x - text_size.x as f32,
+                position.y - text_size.y as f32,
+            );
+            webhacks::draw_text(font, text, pos, args.size, args.spacing, args.color);
+        }
+    }
+}
+
+fn draw_text_overlay(state: &State) {
+    draw_text(
         state.font,
-        &mouse_pos,
-        Vector2::new(10.0, 30.0),
-        20,
-        2.0,
-        RAYWHITE,
+        format! {
+            "slime: [{x}, {y}]\nmouse: [{mx}, {my}]",
+            x = state.slime_pos.x.round(),
+            y = state.slime_pos.y.round(),
+            mx = state.mouse_pos.x.round(),
+            my = state.mouse_pos.y.round()
+        }
+        .as_str(),
+        Vector2::new(10.0, 10.0),
+        DrawTextArgs::default().anchor(Anchor::TopLeft).into(),
     );
 
     // Draw the music indicator in the top right corner
-    webhacks::draw_text(
+    draw_text(
         state.font,
-        if state.mute.into() {
-            "sound: off"
-        } else {
-            "sound: on"
-        },
-        Vector2::new(WINDOW_WIDTH as f32 - 105.0, 10.0),
-        20,
-        2.0,
-        RAYWHITE,
+        format!(
+            "music: {}\neditor: {}",
+            if state.mute.into() { "off" } else { "on" },
+            if state.editor.into() { "on" } else { "off" }
+        )
+        .as_str(),
+        Vector2::new(WINDOW_WIDTH as f32 - 10.0, 10.0),
+        DrawTextArgs::default().anchor(Anchor::TopRight).into(),
     );
 
-    // draw life
-    // let path = state.get_path();
-    let life_text = format!("life: {}", state.life);
-    let font_size = 30;
-    let text_size = webhacks::measure_text(state.font, &life_text, font_size, 2.0);
-    let last = state.path.nodes[state.path.nodes.len() - 1];
-    let pos = last + Vector2::new(-text_size.x as f32 / 2.0, 20.0);
-    webhacks::draw_text(state.font, &life_text, pos, font_size, 2.0, RAYWHITE);
+    // Draw the legend in bottom-right corner
+    draw_text(
+        state.font,
+        "M: mute\nP: debug\nE: editor",
+        Vector2::new(WINDOW_WIDTH as f32 - 10.0, WINDOW_HEIGHT as f32 - 10.0),
+        DrawTextArgs::default()
+            .anchor(Anchor::BottomRight)
+            .color(raylib::Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 100,
+            })
+            .into(),
+    );
+
+    draw_text(
+        state.font,
+        format!("life: {}", state.life).as_str(),
+        state.path.nodes[state.path.nodes.len() - 1],
+        DrawTextArgs::default()
+            .anchor(Anchor::BottomCenter)
+            .size(30)
+            .spacing(2.4)
+            .into(),
+    );
+}
+
+fn draw_game_over_overlay(state: &State) {
+    // draw a shaded rectangle over the screen
+    unsafe {
+        raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
+    }
+
+    // draw the game over text
+    let text = "Game Over!";
+    let font_size = 50;
+    let text_size = webhacks::measure_text(state.font, text, font_size, 2.0);
+    let position = Vector2::new(
+        ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+        ((WINDOW_HEIGHT - font_size) / 2) as f32,
+    );
+    webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+
+    let text = "Press R to restart";
+    let font_size = 20;
+    let text_size = webhacks::measure_text(state.font, text, font_size, 1.0);
+    let position = Vector2::new(
+        ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
+        ((WINDOW_HEIGHT - font_size) / 2 + 50) as f32,
+    );
+    webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
 }
 
 pub type GameFrame = fn(state: *mut State);
@@ -680,18 +794,22 @@ pub fn game_frame(state_ptr: *mut State) {
     state.prev_time = state.curr_time;
     state.curr_time = webhacks::get_time() as f32;
 
-    let update = handle_entities(&state);
-    apply_entities_update(&mut state, update);
-
-    let game_over = state.life == 0;
-
     let update = handle_keys(&state);
     apply_keys_update(&mut state, update);
 
     let update = handle_mouse(&state);
-    state.mouse_pos = update.mouse_pos;
-    state.mouse_btn = update.mouse_btn.into();
-    state.mouse_btn_pressed = update.mouse_btn_pressed.into();
+    {
+        state.mouse_pos = update.mouse_pos;
+        state.mouse_btn = update.mouse_btn.into();
+        state.mouse_btn_pressed = update.mouse_btn_pressed.into();
+    }
+
+    let mut game_over = false;
+    if (!state.editor).into() {
+        let update = handle_entities(&state);
+        apply_entities_update(&mut state, update);
+        game_over = state.life == 0;
+    }
 
     unsafe { raylib::BeginDrawing() };
 
@@ -706,7 +824,7 @@ pub fn game_frame(state_ptr: *mut State) {
             state.curr_time,
         );
 
-        draw_text(&state);
+        draw_text_overlay(&state);
         if state.debug.into() {
             draw_entities_debug(&state);
         }
@@ -716,29 +834,7 @@ pub fn game_frame(state_ptr: *mut State) {
         draw_mouse(&state);
 
         if game_over {
-            // draw a shaded rectangle over the screen
-            unsafe {
-                raylib::DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ALPHA_BLACK);
-            }
-
-            // draw the game over text
-            let text = "Game Over!";
-            let font_size = 50;
-            let text_size = webhacks::measure_text(state.font, text, font_size, 2.0);
-            let position = Vector2::new(
-                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
-                ((WINDOW_HEIGHT - font_size) / 2) as f32,
-            );
-            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
-
-            let text = "Press R to restart";
-            let font_size = 20;
-            let text_size = webhacks::measure_text(state.font, text, font_size, 1.0);
-            let position = Vector2::new(
-                ((WINDOW_WIDTH - text_size.x as i32) / 2) as f32,
-                ((WINDOW_HEIGHT - font_size) / 2 + 50) as f32,
-            );
-            webhacks::draw_text(state.font, text, position, font_size, 2.0, RAYWHITE);
+            draw_game_over_overlay(&state);
         }
     }
 

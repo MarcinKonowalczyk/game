@@ -270,501 +270,493 @@ const set_seed = (seed) => {
     warmup();
 }
 
-WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
-    "env": make_environment({
-        // pub fn ConsoleLog(msg: *const i8, n: i32, args: *const *const i8);
-        ConsoleLog: (text_ptr, args_ptr) => {
-            let buffer = WF.memory.buffer;
-            let args = new Array();
-            if (args_ptr !== 0) {
-                let offset = 0;
-                const special = "<END>";
-                while (true) {
-                    let next_arg = getString(buffer, args_ptr + offset);
-                    if (next_arg === special) break;
-                    args.push(next_arg);
-                    offset += next_arg.length + 1;
-                }
-            }
-            if (args.length === 0) {
-                console.log(getString(buffer, text_ptr));
-            } else {
-                console.log(getString(buffer, text_ptr), ...args);
-            }
-        },
-        Log: (level, text_ptr) => _log(level, "", text_ptr),
-        // pub fn SetTraceLogCallback(callback_name: *const i8) -> ();
-        SetTraceLogCallback: (callback_name_ptr) => {
-            const buffer = WF.memory.buffer;
-            var func_name = getString(buffer, callback_name_ptr);
-            let parts = func_name.split('::');
-            func_name = parts.pop();
+function load_ttf_font(id, font_name, file_path) {
+    if (FONTS.has(font_name)) {
+        // font already loaded
+        return FONTS.get(font_name);
+    }
 
-            // check if we have a function with that name in WF
-            if (func_name === "") {
-                // unset the callback
-                // console.log("Unsetting logging callback", { func_name });
-                info("Unsetting logging callback: func_name={0}".format(func_name));
-                LOG_CALLBACK = undefined;
-            } else if (WF[func_name] === undefined) {
-                console.error("Function not found", { func_name });
-            } else {
-                // console.log("Setting logging callback", { func_name });
-                LOG_CALLBACK = func_name
-                info("Setting logging callback: func_name={0}".format(func_name));
-            }
-        },
-        SetTraceLogLevel: (level) => {
-            LOG_LEVEL = level;
-        },
-        GetMousePositionX: () => GAME.mouseX,
-        GetMousePositionY: () => GAME.mouseY,
-        IsMouseButtonDown: (button) => GAME.mouse_state[button],
-        IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
-        InitWindow: (width, height, title_ptr) => {
-            let title = getString(WF.memory.buffer, title_ptr);
-            // console.log("InitWindow", { width, height, title });
-            info("InitWindow: width={0}, height={1}, title={2}".format(width, height, title));
-            GAME.width = width;
-            GAME.height = height;
-            document.title = title;
-        },
-        BeginDrawing: () => { },
-        CloseWindow: () => { },
-        EndDrawing: () => { },
-        IsKeyDown: (key) => GAME.keys_state.has(key),
-        IsKeyPressed: (key) => GAME.keys_state.has(key) && !GAME.prev_keys_state.has(key),
-        IsKeyReleased: (key) => GAME.prev_keys_state.has(key) && !GAME.keys_state.has(key),
-        ClearBackground: (color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.fillRect(0, 0, CTX.canvas.width, CTX.canvas.height);
-        },
-        // MeasureText: (text_ptr, fontSize) => {
-        //     const buffer = WASM.instance.exports.memory.buffer;
-        //     const text = getString(buffer, text_ptr);
-        //     fontSize *= FONT_SCALE_MAGIC;
-        //     CTX.font = `${fontSize}px grixel`;
-        //     return CTX.measureText(text).width;
-        // },
-        // DrawText: (text_ptr, posX, posY, fontSize, color_ptr) => {
-        //     const buffer = WF.memory.buffer;
-        //     const text = getString(buffer, text_ptr);
-        //     const color = getColor(buffer, color_ptr);
-        //     fontSize *= FONT_SCALE_MAGIC;
-        //     CTX.fillStyle = color;
-        //     CTX.font = `${fontSize}px grixel`;
-        //     const lines = text.split('\n');
-        //     for (var i = 0; i < lines.length; i++) {
-        //         CTX.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
-        //     }
-        // },
-        LoadFont: (file_path_ptr) => {
-            const buffer = WF.memory.buffer;
-            const file_path = getString(buffer, file_path_ptr);
+    // fetch the font file
+    fetch(file_path).then((response) => {
+        return response.arrayBuffer();
+    }).then((buffer) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(new Blob([buffer]));
+        });
+    }).then((buffer) => {
+        return new Promise((resolve, reject) => {
+            const font = new FontFace(font_name, buffer);
+            font.load().then((loaded_face) => {
+                document.fonts.add(loaded_face);
+                resolve(font);
+            }).catch(reject);
+        });
+    }).then((font) => {
+        FONTS.set(id, font_name);
+        return id;
+    }).catch((err) => {
+        console.log(err);
+        return -1;
+    });
+}
 
-            var id = gen_asset_id();
+function load_png_font(id, font_name, file_path) {
+    console.log("Loading PNG font", { id, font_name, file_path });
+}
 
-            // console.log("Loading font", { id, file_path });
-            info("Loading font: id={0}, file_path={1}".format(id, file_path));
 
-            // split at the last slash and at the last dot
-            // let ext = file_path.split('.').pop();
-            let font_name = file_path.split('/').pop().split('.').slice(0, -1).join('.');
+let TextFuncs = {
+    LoadFont: (file_path_ptr) => {
+        const buffer = WF.memory.buffer;
+        const file_path = getString(buffer, file_path_ptr);
 
-            if (FONTS.has(font_name)) {
-                // font already loaded
-                return FONTS.get(font_name);
-            }
+        var id = gen_asset_id();
 
-            // fetch the font file
-            fetch(file_path).then((response) => {
-                return response.arrayBuffer();
-            }).then((buffer) => {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsArrayBuffer(new Blob([buffer]));
-                });
-            }).then((buffer) => {
-                return new Promise((resolve, reject) => {
-                    const font = new FontFace(font_name, buffer);
-                    font.load().then((loaded_face) => {
-                        document.fonts.add(loaded_face);
-                        resolve(font);
-                    }).catch(reject);
-                });
-            }).then((font) => {
-                FONTS.set(id, font_name);
-                return id;
-            }).catch((err) => {
-                console.log(err);
-                return -1;
-            });
+        // console.log("Loading font", { id, file_path });
+        info("Loading font: id={0}, file_path={1}".format(id, file_path));
 
-            return id;
-        },
-        IsFontLoaded: (font) => {
-            return FONTS.has(font);
-        },
-        DrawTextEx: (font, text_ptr, position_ptr, fontSize, spacing, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            const color = getColor(buffer, color_ptr);
-            const pos = getVector2(buffer, position_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            var font_name = FONTS.get(font);
-            if (font_name === undefined) {
-                console.log("Font not found", FONTS, font);
-                return;
-            }
+        // split at the last slash and at the last dot
+        let ext = file_path.split('.').pop();
+        let font_name = file_path.split('/').pop().split('.').slice(0, -1).join('.');
 
-            CTX.font = `${fontSize}px ${font_name}`;
-
-            CTX.fillStyle = color;
-            const lines = text.split('\n');
-
-            for (var i = 0; i < lines.length; i++) {
-                const chars = lines[i].split('');
-                let x = pos.x;
-                for (var j = 0; j < chars.length; j++) {
-                    CTX.fillText(chars[j], x, pos.y + fontSize + (i * fontSize));
-                    x += CTX.measureText(chars[j]).width + spacing;
-                }
-                // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
-            }
-        },
-        // pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
-        MeasureTextEx: (result_ptr, font, text_ptr, fontSize, spacing) => {
-            const buffer = WF.memory.buffer;
-            const text = getString(buffer, text_ptr);
-            fontSize *= FONT_SCALE_MAGIC;
-            var font_name = FONTS.get(font);
-            if (font_name === undefined) {
-                console.log("Font not found", FONTS, font);
-                return;
-            }
-
-            CTX.font = `${fontSize}px ${font_name}`;
-
-            const lines = text.split('\n');
-            let width = 0;
-            let height = 0;
-
-            for (var i = 0; i < lines.length; i++) {
-                const chars = lines[i].split('');
-                let x = 0;
-                for (var j = 0; j < chars.length; j++) {
-                    x += CTX.measureText(chars[j]).width + spacing;
-                }
-                width = Math.max(width, x);
-                height += fontSize;
-            }
-
-            const out = new Float32Array(buffer, result_ptr, 2);
-            out[0] = width;
-            out[1] = height;
-        },
-        DrawLine: (startPosX, startPosY, endPosX, endPosY, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.beginPath();
-            CTX.moveTo(startPosX, startPosY);
-            CTX.lineTo(endPosX, endPosY);
-            CTX.strokeStyle = color;
-            CTX.stroke();
-        },
-        DrawRectangle: (posX, posY, width, height, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.fillRect(posX, posY, width, height);
-        },
-        DrawRectangleV: (position_ptr, size_ptr, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const position = getVector2(buffer, position_ptr);
-            const size = getVector2(buffer, size_ptr);
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.fillRect(position.x, position.y, size.x, size.y);
-        },
-        DrawRectangleRec: (rec_ptr, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const rec = getRectangle(buffer, rec_ptr);
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.fillRect(rec.x, rec.y, rec.width, rec.height);
-        },
-        DrawCircle: (centerX, centerY, radius, color_ptr) => {
-            const buffer = WF.memory.buffer;
-            const color = getColor(buffer, color_ptr);
-            CTX.fillStyle = color;
-            CTX.beginPath();
-            CTX.arc(centerX, centerY, radius, 0, 2 * Math.PI, 0);
-            CTX.fill();
-        },
-        LoadTexture: (file_path_ptr) => {
-            var id = gen_asset_id();
-            // console.log("Loading texture", { id, file_path });
-            info("Loading texture: id={0}, file_path={1}".format(id, getString(WF.memory.buffer, file_path_ptr)));
-
-            const buffer = WF.memory.buffer;
-            const file_path = getString(buffer, file_path_ptr);
-
-            let img = new Image();
-            TEXTURES[id] = img;
-            img.src = file_path;
-
-            return id;
-        },
-        UnloadTexture: () => {
-            drop_asset_id(id);
-            delete TEXTURES[id];
-        },
-        IsTextureLoaded: (id) => {
-            const tex = TEXTURES[id];
-            if (tex === undefined) {
-                return false;
-            }
-            return TEXTURES[id].complete;
-        },
-        // ffi::GetTextureShape(texture: u32) -> Vector2
-        GetTextureShape: (result_ptr, id) => {
-            const img = TEXTURES[id];
-            const buffer = WF.memory.buffer;
-            const result = new Float32Array(buffer, result_ptr, 2);
-            result[0] = img.width;
-            result[1] = img.height;
-        },
-        DrawTextureEx: (id, position_ptr, rotation, scale, _color_ptr) => {
-            const img = TEXTURES[id];
-            const buffer = WF.memory.buffer;
-            const position = getVector2(buffer, position_ptr);
-            CTX.save();
-            CTX.translate(position.x, position.y);
-            CTX.rotate(rotation);
-            CTX.scale(scale, scale);
-            CTX.drawImage(img, 0, 0);
-            CTX.restore();
-        },
-        DrawTexturePro: (id, sourceRec_ptr, destRec_ptr, origin_ptr, rotation_deg) => {
-            const img = TEXTURES[id];
-            const buffer = WF.memory.buffer;
-            const sourceRec = getRectangle(buffer, sourceRec_ptr);
-            const destRec = getRectangle(buffer, destRec_ptr);
-            const origin = getVector2(buffer, origin_ptr);
-            CTX.save();
-            CTX.imageSmoothingEnabled = false;
-
-            let scale_x = destRec.width / sourceRec.width;
-            let scale_y = destRec.height / sourceRec.height;
-
-            CTX.scale(scale_x, scale_y);
-
-            let angle = rotation_deg / 180 * Math.PI;
-            CTX.rotate(angle);
-
-            let tx = destRec.x / scale_x;
-            let ty = destRec.y / scale_y;
-
-            CTX.translate(
-                tx * Math.cos(angle) + ty * Math.sin(angle),
-                ty * Math.cos(angle) - tx * Math.sin(angle),
-            )
-
-            CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, -origin.x / scale_x, -origin.y / scale_y, sourceRec.width, sourceRec.height);
-            // CTX.drawImage(img, 0, 0);
-            CTX.restore();
-        },
-        GetScreenWidth: () => CTX.canvas.width,
-        GetScreenHeight: () => CTX.canvas.height,
-        GetFrameTime: () => {
-            if (TARGET_FPS !== undefined) return Math.min(DT, 1.0 / TARGET_FPS);
-            if (DT === undefined) return 0.0;
-            return DT;
-        },
-        IsWindowResized: () => false,
-        WindowShouldClose: () => false,
-        SetTargetFPS: (x) => TARGET_FPS = x,
-        // GetFPS: () => 1.0 / DT,
-        GetFPS: () => {
-            if (DT === undefined) return 0.0;
-            return 1.0 / DT;
-        },
-        // DrawFPS: (x, y) => {
-        //     const fontSize = 50.0 * FONT_SCALE_MAGIC;
-        //     const fps = GetFPS();
-        //     let color = "lime";                               // Good FPS
-        //     if ((fps < 30) && (fps >= 15)) color = "orange";  // Warning FPS
-        //     else if (fps < 15) color = "red";                 // Low FPS
-        //     ctx.fillStyle = "green";
-        //     ctx.font = `${fontSize}px grixel`;
-        //     ctx.fillText(targetFPS, x, y + fontSize);
-        // },
-        // alert: (ptr) => {
-        //     let msg = getString(ptr);
-        //     console.log(msg);
-        //     window.alert(msg);
-        // },
-        InitAudioDevice: () => { },
-        LoadMusicStream: (file_path_ptr) => {
-            const buffer = WF.memory.buffer;
-            const file_path = getString(buffer, file_path_ptr);
-
-            let id = gen_asset_id();
-            // console.log("Loading music stream", { id, file_path });
-            info("Loading music stream: id={0}, file_path={1}".format(id, file_path));
-
-            // Wait for the file fo be fetched
-            fetch(file_path).then((response) => {
-                loopify(response.url, function (err, loop) {
-                    if (err) {
-                        error(err);
-                        audio.status = MUSIC_STATUS.NotFound;
-                    } else {
-                        audio.loop = loop;
-                        audio.status = MUSIC_STATUS.Loaded;
-                    }
-                });
-            });
-
-            return id;
-        },
-        UnloadMusicStream: (id) => {
-            drop_asset_id(id);
-            delete audio[id];
-        },
-        // pub fn MusicStatus(music: Music) -> i32;
-        // pub enum MusicStatus {
-        //     NotFound = -1,
-        //     NotLoaded = 0,
-        //     Loaded = 1,
-        // }
-        MusicStatus: (id) => audio.status,
-        PlayMusicStream: (_audio_id) => {
-            tryToPlayAudio();
-        },
-        UpdateMusicStream: (_audio_id) => {
-            tryToPlayAudio();
-        },
-        SetMusicVolume: (_audio_id, volume) => {
-            if (audio.loop === undefined) {
-                return;
-            }
-            audio.loop.volume(volume);
-        },
-        // pub fn LoadImage(file_path: *const i8) -> u32;
-        LoadImage: (file_path_ptr) => {
-            const buffer = WF.memory.buffer;
-            const file_path = getString(buffer, file_path_ptr);
-
-            var id = gen_asset_id();
-            // console.log("Loading image", { id, file_path });
-            info("Loading image: id={0}, file_path={1}".format(id, file_path));
-
-            let img = new Image();
-
-            IMAGES[id] = img;
-            img.src = file_path;
-
-            // NOTE: the image is not loaded yet.
-            // img.onload = () => console.log("Image loaded", id);
-
-            return id;
-        },
-        UnloadTexture: (id) => {
-            drop_asset_id(id);
-            delete TEXTURES[id];
-        },
-        // pub fn LoadImageColors(image: Image) -> *mut Color;
-        LoadImageColors: (id, result_ptr) => {
-            const img = IMAGES[id];
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            const data = ctx.getImageData(0, 0, img.width, img.height).data;
-            const colors = new Uint8Array(WF.memory.buffer, WF.from_js_malloc(data.length), data.length);
-            colors.set(data);
-            let ptr = colors.byteOffset;
-            // console.log("Loading image colors", { id, ptr, size: data.length });
-            info("Loading image colors: id={0}, ptr={1}, size={2}".format(id, ptr, data.length));
-            return ptr;
-        },
-        UnloadImageColors: (ptr, size) => {
-            // console.log("Unloading image colors", { ptr, size });
-            info("Unloading image colors: ptr={0}, size={1}".format(ptr, size));
-            WF.from_js_free(ptr, size);
-        },
-        IsImageLoaded: (id) => {
-            let img = IMAGES[id];
-            if (img === undefined) {
-                return false;
-            }
-            return IMAGES[id].complete;
-        },
-        // pub fn LoadTextureFromImage(image: u32) -> u32;
-        LoadTextureFromImage: (id) => {
-            var tex_id = gen_asset_id();
-            // console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
-            info("Loading texture from image: image_id={0}, texture_id={1}".format(id, tex_id));
-            const img = IMAGES[id];
-            TEXTURES[tex_id] = img;
-            return tex_id;
-        },
-        // pub fn GetImageWidth(image: u32) -> i32;
-        GetImageWidth: (id) => {
-            const img = IMAGES[id];
-            if (img === undefined) {
-                return 0;
-            }
-            return img.width;
-        },
-        // pub fn GetImageHeight(image: u32) -> i32;
-        GetImageHeight: (image_id) => {
-            const img = IMAGES[image_id];
-            if (img === undefined) {
-                return 0;
-            }
-            return img.height;
-        },
-        // pub fn UnloadImage(image: Image) -> ();
-        UnloadImage: (image_id) => {
-            // console.log("Unloading image", image_id);
-            info("Unloading image: id={0}".format(image_id));
-            delete IMAGES[image_id];
-        },
-        // pub fn GetTime() -> f64;
-        GetTime: () => {
-            let t = performance.now();
-            return t / 1000;
-        },
-        // pub fn DrawLineEx(startPos: Vector2, endPos: Vector2, thickness: f32, color: *const Color);
-        DrawLineEx(startPos_ptr, endPos_ptr, thickness, color_ptr) {
-            const buffer = WF.memory.buffer;
-            const startPos = getVector2(buffer, startPos_ptr);
-            const endPos = getVector2(buffer, endPos_ptr);
-            const color = getColor(buffer, color_ptr);
-            CTX.beginPath();
-            CTX.moveTo(startPos.x, startPos.y);
-            CTX.lineTo(endPos.x, endPos.y);
-            CTX.lineWidth = thickness;
-            CTX.strokeStyle = color;
-            CTX.stroke();
-            CTX.closePath();
-            CTX.lineWidth = 1;
-        },
-        // pub fn SetRandomSeed(seed: u32);
-        SetRandomSeed: (seed) => set_seed(seed),
-        // pub fn GetRandomValue(min: i32, max: i32) -> i32
-        GetRandomValue(min, max) {
-            return Math.floor(rand() * (max - min + 1) + min);
+        if (ext === "ttf") {
+            load_ttf_font(id, font_name, file_path);
+        } else if (ext === "png") {
+            load_png_font(id, font_name, file_path);
+        } else {
+            console.error("Unsupported font type", { ext });
         }
-    })
+
+
+        return id;
+    },
+    IsFontLoaded: (font) => {
+        return FONTS.has(font);
+    },
+    DrawTextEx: (font, text_ptr, position_ptr, fontSize, spacing, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const text = getString(buffer, text_ptr);
+        const color = getColor(buffer, color_ptr);
+        const pos = getVector2(buffer, position_ptr);
+        fontSize *= FONT_SCALE_MAGIC;
+        var font_name = FONTS.get(font);
+        if (font_name === undefined) {
+            console.log("Font not found", FONTS, font);
+            return;
+        }
+
+        CTX.font = `${fontSize}px ${font_name}`;
+
+        CTX.fillStyle = color;
+        const lines = text.split('\n');
+
+        for (var i = 0; i < lines.length; i++) {
+            const chars = lines[i].split('');
+            let x = pos.x;
+            for (var j = 0; j < chars.length; j++) {
+                CTX.fillText(chars[j], x, pos.y + fontSize + (i * fontSize));
+                x += CTX.measureText(chars[j]).width + spacing;
+            }
+            // ctx.fillText(lines[i], posX, posY + fontSize + (i * fontSize));
+        }
+    },
+    // pub fn MeasureTextEx(font: Font, text: *const i8, fontSize: i32, spacing: f32) -> Vector2;
+    MeasureTextEx: (result_ptr, font, text_ptr, fontSize, spacing) => {
+        const buffer = WF.memory.buffer;
+        const text = getString(buffer, text_ptr);
+        fontSize *= FONT_SCALE_MAGIC;
+        var font_name = FONTS.get(font);
+        if (font_name === undefined) {
+            console.log("Font not found", FONTS, font);
+            return;
+        }
+
+        CTX.font = `${fontSize}px ${font_name}`;
+
+        const lines = text.split('\n');
+        let width = 0;
+        let height = 0;
+
+        for (var i = 0; i < lines.length; i++) {
+            const chars = lines[i].split('');
+            let x = 0;
+            for (var j = 0; j < chars.length; j++) {
+                x += CTX.measureText(chars[j]).width + spacing;
+            }
+            width = Math.max(width, x);
+            height += fontSize;
+        }
+
+        const out = new Float32Array(buffer, result_ptr, 2);
+        out[0] = width;
+        out[1] = height;
+    },
+}
+
+let TextureFuncs = {
+    LoadTexture: (file_path_ptr) => {
+        var id = gen_asset_id();
+        // console.log("Loading texture", { id, file_path });
+        info("Loading texture: id={0}, file_path={1}".format(id, getString(WF.memory.buffer, file_path_ptr)));
+
+        const buffer = WF.memory.buffer;
+        const file_path = getString(buffer, file_path_ptr);
+
+        let img = new Image();
+        TEXTURES[id] = img;
+        img.src = file_path;
+
+        return id;
+    },
+    UnloadTexture: () => {
+        drop_asset_id(id);
+        delete TEXTURES[id];
+    },
+    IsTextureLoaded: (id) => {
+        const tex = TEXTURES[id];
+        if (tex === undefined) {
+            return false;
+        }
+        return TEXTURES[id].complete;
+    },
+    // ffi::GetTextureShape(texture: u32) -> Vector2
+    GetTextureShape: (result_ptr, id) => {
+        const img = TEXTURES[id];
+        const buffer = WF.memory.buffer;
+        const result = new Float32Array(buffer, result_ptr, 2);
+        result[0] = img.width;
+        result[1] = img.height;
+    },
+    DrawTextureEx: (id, position_ptr, rotation, scale, _color_ptr) => {
+        const img = TEXTURES[id];
+        const buffer = WF.memory.buffer;
+        const position = getVector2(buffer, position_ptr);
+        CTX.save();
+        CTX.translate(position.x, position.y);
+        CTX.rotate(rotation);
+        CTX.scale(scale, scale);
+        CTX.drawImage(img, 0, 0);
+        CTX.restore();
+    },
+    DrawTexturePro: (id, sourceRec_ptr, destRec_ptr, origin_ptr, rotation_deg) => {
+        const img = TEXTURES[id];
+        const buffer = WF.memory.buffer;
+        const sourceRec = getRectangle(buffer, sourceRec_ptr);
+        const destRec = getRectangle(buffer, destRec_ptr);
+        const origin = getVector2(buffer, origin_ptr);
+        CTX.save();
+        CTX.imageSmoothingEnabled = false;
+
+        let scale_x = destRec.width / sourceRec.width;
+        let scale_y = destRec.height / sourceRec.height;
+
+        CTX.scale(scale_x, scale_y);
+
+        let angle = rotation_deg / 180 * Math.PI;
+        CTX.rotate(angle);
+
+        let tx = destRec.x / scale_x;
+        let ty = destRec.y / scale_y;
+
+        CTX.translate(
+            tx * Math.cos(angle) + ty * Math.sin(angle),
+            ty * Math.cos(angle) - tx * Math.sin(angle),
+        )
+
+        CTX.drawImage(img, sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height, -origin.x / scale_x, -origin.y / scale_y, sourceRec.width, sourceRec.height);
+        // CTX.drawImage(img, 0, 0);
+        CTX.restore();
+    },
+    // pub fn LoadImage(file_path: *const i8) -> u32;
+    LoadImage: (file_path_ptr) => {
+        const buffer = WF.memory.buffer;
+        const file_path = getString(buffer, file_path_ptr);
+
+        var id = gen_asset_id();
+        // console.log("Loading image", { id, file_path });
+        info("Loading image: id={0}, file_path={1}".format(id, file_path));
+
+        let img = new Image();
+
+        IMAGES[id] = img;
+        img.src = file_path;
+
+        // NOTE: the image is not loaded yet.
+        // img.onload = () => console.log("Image loaded", id);
+
+        return id;
+    },
+    UnloadTexture: (id) => {
+        drop_asset_id(id);
+        delete TEXTURES[id];
+    },
+    // pub fn LoadImageColors(image: Image) -> *mut Color;
+    LoadImageColors: (id, result_ptr) => {
+        const img = IMAGES[id];
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, img.width, img.height).data;
+        const colors = new Uint8Array(WF.memory.buffer, WF.from_js_malloc(data.length), data.length);
+        colors.set(data);
+        let ptr = colors.byteOffset;
+        // console.log("Loading image colors", { id, ptr, size: data.length });
+        info("Loading image colors: id={0}, ptr={1}, size={2}".format(id, ptr, data.length));
+        return ptr;
+    },
+    UnloadImageColors: (ptr, size) => {
+        // console.log("Unloading image colors", { ptr, size });
+        info("Unloading image colors: ptr={0}, size={1}".format(ptr, size));
+        WF.from_js_free(ptr, size);
+    },
+    IsImageLoaded: (id) => {
+        let img = IMAGES[id];
+        if (img === undefined) {
+            return false;
+        }
+        return IMAGES[id].complete;
+    },
+    // pub fn LoadTextureFromImage(image: u32) -> u32;
+    LoadTextureFromImage: (id) => {
+        var tex_id = gen_asset_id();
+        // console.log("Loading texture from image", { "image_id": id, "texture_id": tex_id });
+        info("Loading texture from image: image_id={0}, texture_id={1}".format(id, tex_id));
+        const img = IMAGES[id];
+        TEXTURES[tex_id] = img;
+        return tex_id;
+    },
+    // pub fn GetImageShape(image: u32) -> Vector2;
+    GetImageShape: (result_ptr, id) => {
+        const img = IMAGES[id];
+        const buffer = WF.memory.buffer;
+        const result = new Float32Array(buffer, result_ptr, 2);
+        result[0] = img.width;
+        result[1] = img.height;
+    },
+    // pub fn UnloadImage(image: Image) -> ();
+    UnloadImage: (image_id) => {
+        // console.log("Unloading image", image_id);
+        info("Unloading image: id={0}".format(image_id));
+        delete IMAGES[image_id];
+    },
+}
+
+let LogFuncs = {
+    ConsoleLog: (text_ptr, args_ptr) => {
+        let buffer = WF.memory.buffer;
+        let args = new Array();
+        if (args_ptr !== 0) {
+            let offset = 0;
+            const special = "<END>";
+            while (true) {
+                let next_arg = getString(buffer, args_ptr + offset);
+                if (next_arg === special) break;
+                args.push(next_arg);
+                offset += next_arg.length + 1;
+            }
+        }
+        if (args.length === 0) {
+            console.log(getString(buffer, text_ptr));
+        } else {
+            console.log(getString(buffer, text_ptr), ...args);
+        }
+    },
+    Log: (level, text_ptr) => _log(level, "", text_ptr),
+    // pub fn SetTraceLogCallback(callback_name: *const i8) -> ();
+    SetTraceLogCallback: (callback_name_ptr) => {
+        const buffer = WF.memory.buffer;
+        var func_name = getString(buffer, callback_name_ptr);
+        let parts = func_name.split('::');
+        func_name = parts.pop();
+
+        // check if we have a function with that name in WF
+        if (func_name === "") {
+            // unset the callback
+            // console.log("Unsetting logging callback", { func_name });
+            info("Unsetting logging callback: func_name={0}".format(func_name));
+            LOG_CALLBACK = undefined;
+        } else if (WF[func_name] === undefined) {
+            console.error("Function not found", { func_name });
+        } else {
+            // console.log("Setting logging callback", { func_name });
+            LOG_CALLBACK = func_name
+            info("Setting logging callback: func_name={0}".format(func_name));
+        }
+    },
+    SetTraceLogLevel: (level) => {
+        LOG_LEVEL = level;
+    },
+}
+
+let InterfaceFuncs = {
+    GetMousePosition: (result_ptr) => {
+        const buffer = WF.memory.buffer;
+        const result = new Float32Array(buffer, result_ptr, 2);
+        result[0] = GAME.mouseX;
+        result[1] = GAME.mouseY;
+    },
+    IsMouseButtonDown: (button) => GAME.mouse_state[button],
+    IsMouseButtonPressed: (button) => GAME.mouse_state[button] && !GAME.prev_mouse_state[button],
+    IsKeyDown: (key) => GAME.keys_state.has(key),
+    IsKeyPressed: (key) => GAME.keys_state.has(key) && !GAME.prev_keys_state.has(key),
+    IsKeyReleased: (key) => GAME.prev_keys_state.has(key) && !GAME.keys_state.has(key),
+}
+
+let AudioFuncs = {
+    InitAudioDevice: () => { },
+    LoadMusicStream: (file_path_ptr) => {
+        const buffer = WF.memory.buffer;
+        const file_path = getString(buffer, file_path_ptr);
+
+        let id = gen_asset_id();
+        // console.log("Loading music stream", { id, file_path });
+        info("Loading music stream: id={0}, file_path={1}".format(id, file_path));
+
+        // Wait for the file fo be fetched
+        fetch(file_path).then((response) => {
+            loopify(response.url, function (err, loop) {
+                if (err) {
+                    error(err);
+                    audio.status = MUSIC_STATUS.NotFound;
+                } else {
+                    audio.loop = loop;
+                    audio.status = MUSIC_STATUS.Loaded;
+                }
+            });
+        });
+
+        return id;
+    },
+    UnloadMusicStream: (id) => {
+        drop_asset_id(id);
+        delete audio[id];
+    },
+    MusicStatus: (id) => audio.status,
+    PlayMusicStream: (_audio_id) => {
+        tryToPlayAudio();
+    },
+    UpdateMusicStream: (_audio_id) => {
+        tryToPlayAudio();
+    },
+    SetMusicVolume: (_audio_id, volume) => {
+        if (audio.loop === undefined) {
+            return;
+        }
+        audio.loop.volume(volume);
+    },
+}
+
+let OtherFuncs = {
+    InitWindow: (width, height, title_ptr) => {
+        let title = getString(WF.memory.buffer, title_ptr);
+        // console.log("InitWindow", { width, height, title });
+        info("InitWindow: width={0}, height={1}, title={2}".format(width, height, title));
+        GAME.width = width;
+        GAME.height = height;
+        document.title = title;
+    },
+    BeginDrawing: () => { },
+    CloseWindow: () => { },
+    EndDrawing: () => { },
+    ClearBackground: (color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.fillRect(0, 0, CTX.canvas.width, CTX.canvas.height);
+    },
+    DrawLine: (startPosX, startPosY, endPosX, endPosY, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.beginPath();
+        CTX.moveTo(startPosX, startPosY);
+        CTX.lineTo(endPosX, endPosY);
+        CTX.strokeStyle = color;
+        CTX.stroke();
+    },
+    DrawRectangle: (posX, posY, width, height, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.fillRect(posX, posY, width, height);
+    },
+    DrawRectangleV: (position_ptr, size_ptr, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const position = getVector2(buffer, position_ptr);
+        const size = getVector2(buffer, size_ptr);
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.fillRect(position.x, position.y, size.x, size.y);
+    },
+    DrawRectangleRec: (rec_ptr, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const rec = getRectangle(buffer, rec_ptr);
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.fillRect(rec.x, rec.y, rec.width, rec.height);
+    },
+    DrawCircle: (centerX, centerY, radius, color_ptr) => {
+        const buffer = WF.memory.buffer;
+        const color = getColor(buffer, color_ptr);
+        CTX.fillStyle = color;
+        CTX.beginPath();
+        CTX.arc(centerX, centerY, radius, 0, 2 * Math.PI, 0);
+        CTX.fill();
+    },
+    GetScreenShape: (result_ptr) => {
+        const buffer = WF.memory.buffer;
+        const result = new Float32Array(buffer, result_ptr, 2);
+        result[0] = CTX.canvas.width;
+        result[1] = CTX.canvas.height;
+    },
+    GetFrameTime: () => {
+        if (TARGET_FPS !== undefined) return Math.min(DT, 1.0 / TARGET_FPS);
+        if (DT === undefined) return 0.0;
+        return DT;
+    },
+    IsWindowResized: () => false,
+    WindowShouldClose: () => false,
+    SetTargetFPS: (x) => TARGET_FPS = x,
+    // GetFPS: () => 1.0 / DT,
+    GetFPS: () => {
+        if (DT === undefined) return 0.0;
+        return 1.0 / DT;
+    },
+    // pub fn GetTime() -> f64;
+    GetTime: () => {
+        let t = performance.now();
+        return t / 1000;
+    },
+    // pub fn DrawLineEx(startPos: Vector2, endPos: Vector2, thickness: f32, color: *const Color);
+    DrawLineEx(startPos_ptr, endPos_ptr, thickness, color_ptr) {
+        const buffer = WF.memory.buffer;
+        const startPos = getVector2(buffer, startPos_ptr);
+        const endPos = getVector2(buffer, endPos_ptr);
+        const color = getColor(buffer, color_ptr);
+        CTX.beginPath();
+        CTX.moveTo(startPos.x, startPos.y);
+        CTX.lineTo(endPos.x, endPos.y);
+        CTX.lineWidth = thickness;
+        CTX.strokeStyle = color;
+        CTX.stroke();
+        CTX.closePath();
+        CTX.lineWidth = 1;
+    },
+    // pub fn SetRandomSeed(seed: u32);
+    SetRandomSeed: (seed) => set_seed(seed),
+    // pub fn GetRandomValue(min: i32, max: i32) -> i32
+    GetRandomValue(min, max) {
+        return Math.floor(rand() * (max - min + 1) + min);
+    }
+};
+
+WebAssembly.instantiateStreaming(fetch(WASM_PATH), {
+    "env": make_environment(TextFuncs, TextureFuncs, LogFuncs, InterfaceFuncs, AudioFuncs, OtherFuncs)
 }).then(w => {
     WASM = w;
     WF = w.instance.exports;
