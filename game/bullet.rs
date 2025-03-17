@@ -81,7 +81,7 @@ impl Bullet {
         let mut update = BulletUpdate::from(self);
 
         let target: Option<(Vector2, f32)> = state.man.get_enemy(self.target).map(|enemy| {
-            let direction = enemy.position - self.position;
+            let direction = enemy.position.xy - self.position;
             (direction, enemy.radius)
         });
 
@@ -122,7 +122,7 @@ impl Bullet {
     pub fn draw_debug(&self, state: &State) {
         match state.man.get_enemy(self.target) {
             Some(target) => {
-                webhacks::draw_line_ex(self.position, target.position, 2.0, GREEN);
+                webhacks::draw_line_ex(self.position, target.position.into(), 2.0, GREEN);
             }
             None => {}
         }

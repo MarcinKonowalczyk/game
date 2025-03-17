@@ -288,7 +288,7 @@ impl EntityManager {
         let mut closest = None;
         let mut closest_dist = std::f32::MAX;
         for enemy in self.enemies.iter() {
-            let dist = enemy.position.dist(&position);
+            let dist = enemy.position.xy.dist(&position);
             if dist < closest_dist {
                 closest = Some(enemy.into());
                 closest_dist = dist;

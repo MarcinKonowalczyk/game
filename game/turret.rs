@@ -91,8 +91,8 @@ impl Turret {
 
         update.fire_cooldown -= dt;
         if let Some(enemy) = state.man.closest_enemy(self.position) {
-            if self.position.dist(&enemy.position) < ACTIVE_RADIUS {
-                update.facing = enemy.position - self.position;
+            if self.position.dist(&enemy.position.into()) < ACTIVE_RADIUS {
+                update.facing = enemy.position.xy - self.position;
                 if update.fire_cooldown <= 0.0 {
                     update.bullet_request = Some(BulletRequest {
                         position: self.position,

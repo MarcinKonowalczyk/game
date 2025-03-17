@@ -82,8 +82,7 @@ pub mod ffi {
         pub fn GetTime() -> f64;
         pub fn LoadImageColors(image: Image) -> *mut Color;
         pub fn UnloadImageColors(colors: *mut Color, n: usize);
-        pub fn GetImageWidth(image: Image) -> i32;
-        pub fn GetImageHeight(image: Image) -> i32;
+        pub fn GetImageShape(image: Image) -> Vector2;
         pub fn DrawTexturePro(
             texture: Texture,
             sourceRec: *const raylib::Rectangle,
@@ -110,6 +109,7 @@ pub mod ffi {
         pub fn SetTraceLogLevel(level: i32);
         pub fn SetRandomSeed(seed: u32);
         pub fn GetRandomValue(min: i32, max: i32) -> i32;
+        pub fn GetMousePosition() -> Vector2;
     }
 }
 
@@ -333,18 +333,14 @@ pub fn unload_image_colors(colors: *mut Color, #[allow(unused)] n: usize) {
     };
 }
 
-pub fn get_image_width(image: Image) -> i32 {
+pub fn get_image_shape(image: Image) -> Vector2 {
     #[cfg(feature = "web")]
-    return unsafe { ffi::GetImageWidth(image) };
+    return unsafe { ffi::GetImageShape(image) };
     #[cfg(feature = "native")]
-    return image.width;
-}
-
-pub fn get_image_height(image: Image) -> i32 {
-    #[cfg(feature = "web")]
-    return unsafe { ffi::GetImageHeight(image) };
-    #[cfg(feature = "native")]
-    return image.height;
+    return Vector2 {
+        x: image.width as f32,
+        y: image.height as f32,
+    };
 }
 
 pub fn draw_texture_pro(
@@ -591,6 +587,11 @@ pub fn draw_circle(position: Vector2, radius: f32, color: Color) {
 }
 
 pub fn get_mouse_position() -> Vector2 {
+    #[cfg(feature = "web")]
+    unsafe {
+        Vector2::from(ffi::GetMousePosition())
+    }
+    #[cfg(feature = "native")]
     unsafe { raylib::GetMousePosition() }.into()
 }
 
